@@ -1,0 +1,75 @@
+name: Costruisci APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: costruisci-apk
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Prova la logica
+        run: |
+          mkdir -p prova
+          javac -d prova Severity.java Finding.java AppFacts.java Assessment.java RiskPolicy.java Hashing.java VtResult.java KeyFormat.java RateGate.java Sanitize.java Reports.java HistoryEntry.java HistoryCodec.java unit__LogicTests.java
+          java -cp prova it.leonardo.antivirus.LogicTests
+
+      - name: Prepara il progetto
+        run: |
+          mkdir -p work/app/src/main/java/it/leonardo/antivirus
+          cp settings.gradle.kts work/settings.gradle.kts
+          cp root.gradle.kts work/build.gradle.kts
+          cp app.gradle.kts work/app/build.gradle.kts
+          cp gradle.properties work/gradle.properties
+          cp leonardo.keystore work/app/leonardo.keystore
+          cp AndroidManifest.xml work/app/src/main/AndroidManifest.xml
+          for f in *.java; do
+            case "$f" in unit__*) ;; *) cp "$f" work/app/src/main/java/it/leonardo/antivirus/ ;; esac
+          done
+          for f in res__*.xml; do
+            [ -e "$f" ] || continue
+            rest="${f#res__}"
+            dir="${rest%%__*}"
+            name="${rest#*__}"
+            mkdir -p "work/app/src/main/res/$dir"
+            cp "$f" "work/app/src/main/res/$dir/$name"
+          done
+
+      - name: Costruisci l'app
+        working-directory: work
+        run: gradle assembleRelease --no-daemon --stacktrace -PverCode=${{ github.run_number }}
+
+      - name: Prepara il file da installare
+        run: cp work/app/build/outputs/apk/release/app-release.apk leonardo-antivirus.apk
+
+      - name: Pubblica l'app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SUM=$(sha256sum leonardo-antivirus.apk | cut -d' ' -f1)
+          NOTES="Versione costruita automaticamente (numero ${{ github.run_number }}). SHA-256 del file: $SUM"
+          if gh release view ultima > /dev/null 2>&1; then
+            gh release upload ultima leonardo-antivirus.apk --clobber
+            gh release edit ultima --notes "$NOTES"
+          else
+            gh release create ultima leonardo-antivirus.apk --title "Leonardo Antivirus" --notes "$NOTES" --target "${{ github.sha }}"
+          fi
