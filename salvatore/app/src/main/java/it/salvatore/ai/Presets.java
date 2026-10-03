@@ -17,6 +17,11 @@ public final class Presets {
         {"Google Gemini (online)", "https://generativelanguage.googleapis.com/v1beta/openai/", "gemini-3.8-flash"},
         {"Groq (online)", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"},
         {"OpenRouter (online)", "https://openrouter.ai/api/v1", "openrouter/auto"},
+        {"Mistral (online, gratis con limiti)", "https://api.mistral.ai/v1", "mistral-small-latest"},
+        {"Mistral Codestral (codice, gratis)", "https://codestral.mistral.ai/v1", "codestral-latest"},
+        {"NVIDIA (online, gratis con limiti)", "https://integrate.api.nvidia.com/v1", "meta/llama-3.3-70b-instruct"},
+        {"Cerebras (online, gratis con limiti)", "https://api.cerebras.ai/v1", "gpt-oss-120b"},
+        {"Altro servizio (scrivi tu indirizzo e modello)", "", ""},
         {"Mio server (a pagamento)", "", ""},
     };
 

@@ -290,7 +290,7 @@ public class SettingsActivity extends Activity {
         rl.topMargin = th.dp(12);
         ac.addView(reset, rl);
 
-        TextView about = th.label("Salvatore · versione 1.3\nLe chat, i cervelli e le chiavi restano solo su questo tablet.",
+        TextView about = th.label("Salvatore · versione 1.3.1\nLe chat, i cervelli e le chiavi restano solo su questo tablet.",
                 13, th.sub, false);
         about.setPadding(th.dp(4), th.dp(4), 0, 0);
         root.addView(about);
