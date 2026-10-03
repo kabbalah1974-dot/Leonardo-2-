@@ -26,10 +26,24 @@ public final class OpenAiClient implements Pipeline.Llm {
         void onDelta(String text);
     }
 
+    /** Chi sa rispondere "dentro il tablet" (senza internet). Lo imposta l'app all'avvio. */
+    public interface LocalEngine {
+        String chat(Model.Brain brain, List<Model.Msg> messages, Sink sink, Cancel cancel) throws ChatException;
+    }
+
+    public static volatile LocalEngine local;
+
     /** Permette di fermare una risposta in corso. */
     public static final class Cancel {
         public volatile boolean cancelled = false;
         volatile HttpURLConnection conn;
+        private volatile Runnable onCancel;
+
+        /** Cosa fare quando si preme Ferma (se già premuto, lo fa subito). */
+        public void setOnCancel(Runnable r) {
+            onCancel = r;
+            if (r != null && cancelled) r.run();
+        }
 
         public void cancel() {
             cancelled = true;
@@ -37,6 +51,13 @@ public final class OpenAiClient implements Pipeline.Llm {
             if (c != null) {
                 try {
                     c.disconnect();
+                } catch (RuntimeException ignored) {
+                }
+            }
+            Runnable r = onCancel;
+            if (r != null) {
+                try {
+                    r.run();
                 } catch (RuntimeException ignored) {
                 }
             }
@@ -87,6 +108,11 @@ public final class OpenAiClient implements Pipeline.Llm {
 
     public static String chat(Model.Brain brain, List<Model.Msg> messages, Sink sink, Cancel cancel)
             throws ChatException {
+        if (brain != null && brain.isLocal()) {
+            LocalEngine le = local;
+            if (le == null) throw new ChatException("Il cervello dentro il tablet non è pronto. Riapri Salvatore.");
+            return le.chat(brain, messages, sink, cancel == null ? new Cancel() : cancel);
+        }
         if (brain == null || brain.url == null || brain.url.trim().isEmpty()) {
             throw new ChatException("Nessun cervello collegato. Apri Impostazioni e scegli un cervello.");
         }

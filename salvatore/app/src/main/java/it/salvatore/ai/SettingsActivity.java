@@ -2,6 +2,8 @@ package it.salvatore.ai;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -34,6 +36,12 @@ public class SettingsActivity extends Activity {
     private ArrayAdapter<String> brainAd;
     private Spinner brainSpinner;
     private EditText bName, bUrl, bKey, bModel;
+    private LinearLayout remoteBox, localBox;
+    private TextView localStatus;
+    private Button btnDownload, btnPick, btnDelete;
+    private volatile boolean busyModel = false;
+    private OpenAiClient.Cancel modelCancel;
+    private static final int REQ_PICK = 77;
 
     private List<Model.Agent> agents;
     private Model.Agent shownAgent;
@@ -47,6 +55,7 @@ public class SettingsActivity extends Activity {
         super.onCreate(savedInstanceState);
         store = new Store(this);
         th = new Ui(this);
+        LocalBrain.install(this);
 
         brains = store.brains();
         String activeId = store.activeBrain().id;
@@ -164,8 +173,11 @@ public class SettingsActivity extends Activity {
         bModel = th.field("Nome del modello", false);
         bModel.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         labeled(bc, "Nome (lo scegli tu)", bName);
-        labeled(bc, "Indirizzo", bUrl);
-        labeled(bc, "Chiave di accesso", bKey);
+
+        remoteBox = new LinearLayout(this);
+        remoteBox.setOrientation(LinearLayout.VERTICAL);
+        labeled(remoteBox, "Indirizzo", bUrl);
+        labeled(remoteBox, "Chiave di accesso", bKey);
         CheckBox show = new CheckBox(this);
         show.setText("Mostra la chiave");
         show.setTextColor(th.sub);
@@ -173,8 +185,28 @@ public class SettingsActivity extends Activity {
             int t = on ? InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD : InputType.TYPE_TEXT_VARIATION_PASSWORD;
             bKey.setInputType(InputType.TYPE_CLASS_TEXT | t);
         });
-        bc.addView(show);
-        labeled(bc, "Modello", bModel);
+        remoteBox.addView(show);
+        bc.addView(remoteBox);
+
+        labeled(bc, "Modello (nome del file, se è dentro il tablet)", bModel);
+
+        localBox = new LinearLayout(this);
+        localBox.setOrientation(LinearLayout.VERTICAL);
+        localBox.setPadding(0, th.dp(12), 0, 0);
+        localStatus = th.label("", 14, th.text, false);
+        localBox.addView(localStatus);
+        TextView lh = th.label("Questo cervello gira dentro il tablet, anche senza internet. Con 4 GB di memoria è un modello piccolo: "
+                + "risponde in modo più semplice e più lento di quelli online. La prima risposta dopo l'avvio è la più lenta. "
+                + "Durante lo scaricamento tieni lo schermo acceso.", 13, th.sub, false);
+        lh.setPadding(0, th.dp(4), 0, th.dp(4));
+        localBox.addView(lh);
+        btnDownload = th.button("Scarica il modello consigliato (circa " + Presets.LOCAL_MB + " MB)", v -> onDownload());
+        btnPick = th.button("Scegli un file dal tablet o da Drive", v -> onPick());
+        btnDelete = th.button("Elimina il modello dal tablet", v -> onDeleteModel());
+        localBox.addView(btnDownload);
+        localBox.addView(btnPick);
+        localBox.addView(btnDelete);
+        bc.addView(localBox);
 
         Button test = th.button("Prova il collegamento", v -> onTest());
         LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(
@@ -259,13 +291,24 @@ public class SettingsActivity extends Activity {
         bUrl.setText(shownBrain.url);
         bKey.setText(shownBrain.key);
         bModel.setText(shownBrain.model);
+        updateBrainLayout();
+    }
+
+    /** Mostra solo i campi che servono: indirizzo e chiave per i cervelli online, modello per quello nel tablet. */
+    private void updateBrainLayout() {
+        boolean local = shownBrain != null && shownBrain.isLocal();
+        remoteBox.setVisibility(local ? View.GONE : View.VISIBLE);
+        localBox.setVisibility(local ? View.VISIBLE : View.GONE);
+        if (local) refreshLocalStatus(null);
     }
 
     private void commitBrain() {
         if (shownBrain == null) return;
         shownBrain.name = bName.getText().toString().trim();
-        shownBrain.url = bUrl.getText().toString().trim();
-        shownBrain.key = bKey.getText().toString().trim();
+        if (!shownBrain.isLocal()) {
+            shownBrain.url = bUrl.getText().toString().trim();
+            shownBrain.key = bKey.getText().toString().trim();
+        }
         shownBrain.model = bModel.getText().toString().trim();
         int i = brains.indexOf(shownBrain);
         if (i >= 0 && i < brainNames.size()) {
@@ -344,6 +387,143 @@ public class SettingsActivity extends Activity {
                         .show();
             });
         }).start();
+    }
+
+    // ------------------------------------------------------------------ modello dentro il tablet
+
+    private String modelName() {
+        String n = ModelStore.safeName(bModel.getText().toString());
+        return n.isEmpty() ? Presets.LOCAL_FILE : n;
+    }
+
+    private void refreshLocalStatus(String extra) {
+        String name = modelName();
+        String s;
+        if (ModelStore.isReady(this, name)) {
+            s = "Modello pronto: " + name + " (" + ModelStore.mb(ModelStore.file(this, name).length()) + ")";
+        } else {
+            s = "Modello non ancora sul tablet: " + name;
+        }
+        if (extra != null) s = s + "\n" + extra;
+        localStatus.setText(s);
+        btnDownload.setText(busyModel ? "Annulla" : "Scarica il modello consigliato (circa " + Presets.LOCAL_MB + " MB)");
+        btnPick.setEnabled(!busyModel);
+        btnDelete.setEnabled(!busyModel);
+    }
+
+    private void onDownload() {
+        if (busyModel) {
+            if (modelCancel != null) modelCancel.cancel();
+            return;
+        }
+        bModel.setText(Presets.LOCAL_FILE);
+        commitBrain();
+        busyModel = true;
+        final OpenAiClient.Cancel c = new OpenAiClient.Cancel();
+        modelCancel = c;
+        refreshLocalStatus("Scaricamento in corso…");
+        new Thread(() -> {
+            String result;
+            try {
+                ModelStore.download(getApplicationContext(), Presets.LOCAL_URL, Presets.LOCAL_FILE, (done, total) -> {
+                    final String t = total > 0
+                            ? "Scaricamento: " + ModelStore.mb(done) + " di " + ModelStore.mb(total) + " (" + (done * 100 / total) + "%)"
+                            : "Scaricamento: " + ModelStore.mb(done);
+                    ui.post(() -> {
+                        if (!isFinishing() && busyModel) refreshLocalStatus(t);
+                    });
+                }, c);
+                result = "Fatto! Il modello è sul tablet.";
+            } catch (java.io.IOException e) {
+                result = "Non riuscito: " + e.getMessage();
+            } catch (RuntimeException e) {
+                result = "Non riuscito: " + e;
+            }
+            final String fr = result;
+            ui.post(() -> {
+                busyModel = false;
+                modelCancel = null;
+                if (!isFinishing()) refreshLocalStatus(fr);
+            });
+        }).start();
+    }
+
+    private void onPick() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        try {
+            startActivityForResult(i, REQ_PICK);
+        } catch (RuntimeException e) {
+            Toast.makeText(this, "Non riesco ad aprire la scelta dei file.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_PICK || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        final Uri uri = data.getData();
+        final String name = ModelStore.displayName(this, uri);
+        if (!name.toLowerCase(java.util.Locale.ROOT).endsWith(".litertlm")) {
+            new AlertDialog.Builder(this)
+                    .setTitle("File non adatto")
+                    .setMessage("Il file \"" + name + "\" non è un modello per Salvatore. Serve un file che finisce con .litertlm.")
+                    .setPositiveButton("OK", null)
+                    .show();
+            return;
+        }
+        busyModel = true;
+        final OpenAiClient.Cancel c = new OpenAiClient.Cancel();
+        modelCancel = c;
+        refreshLocalStatus("Copio il file nel tablet…");
+        new Thread(() -> {
+            String result;
+            String saved = null;
+            try {
+                saved = ModelStore.importFrom(getApplicationContext(), uri, name, (done, total) -> {
+                    final String t = total > 0
+                            ? "Copia: " + ModelStore.mb(done) + " di " + ModelStore.mb(total)
+                            : "Copia: " + ModelStore.mb(done);
+                    ui.post(() -> {
+                        if (!isFinishing() && busyModel) refreshLocalStatus(t);
+                    });
+                }, c);
+                result = "Fatto! File copiato nel tablet.";
+            } catch (java.io.IOException e) {
+                result = "Non riuscito: " + e.getMessage();
+            } catch (RuntimeException e) {
+                result = "Non riuscito: " + e;
+            }
+            final String fr = result;
+            final String fs = saved;
+            ui.post(() -> {
+                busyModel = false;
+                modelCancel = null;
+                if (isFinishing()) return;
+                if (fs != null) bModel.setText(fs);
+                commitBrain();
+                refreshLocalStatus(fr);
+            });
+        }).start();
+    }
+
+    private void onDeleteModel() {
+        final String name = modelName();
+        if (!ModelStore.isReady(this, name)) {
+            Toast.makeText(this, "Non c'è nessun modello da eliminare.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Elimina il modello")
+                .setMessage("Elimino \"" + name + "\" dal tablet? Libera spazio, e lo puoi riscaricare quando vuoi.")
+                .setPositiveButton("Elimina", (d, w) -> {
+                    LocalBrain.release();
+                    ModelStore.delete(this, name);
+                    refreshLocalStatus("Modello eliminato.");
+                })
+                .setNegativeButton("Annulla", null)
+                .show();
     }
 
     // ------------------------------------------------------------------ agenti

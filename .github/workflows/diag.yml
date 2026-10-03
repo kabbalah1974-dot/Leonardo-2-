@@ -54,4 +54,4 @@ jobs:
           else
             gh release create diag diag.txt --title "diagnostica" --notes "file di servizio" --target "${{ github.sha }}"
           fi
-# v2
+

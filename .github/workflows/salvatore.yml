@@ -37,11 +37,25 @@ jobs:
         run: |
           mkdir -p prova
           S=app/src/main/java/it/salvatore/ai
-          javac -encoding UTF-8 -d prova $S/Json.java $S/Model.java $S/Pipeline.java $S/OpenAiClient.java test/it/salvatore/ai/LogicTests.java
+          javac -encoding UTF-8 -d prova $S/Json.java $S/Model.java $S/Pipeline.java $S/OpenAiClient.java $S/Fmt.java $S/ThinkFilter.java test/it/salvatore/ai/LogicTests.java
           java -Dfile.encoding=UTF-8 -cp prova it.salvatore.ai.LogicTests
 
       - name: Costruisci l'app
-        run: gradle assembleRelease --no-daemon --stacktrace -PverCode=${{ github.run_number }}
+        shell: bash
+        run: gradle assembleRelease --no-daemon --stacktrace -PverCode=${{ github.run_number }} 2>&1 | tee build.log
+
+      - name: Se fallisce, salva il registro
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f build.log ] || echo "nessun registro" > build.log
+          tail -n 400 build.log > build-errore.txt
+          if gh release view diag > /dev/null 2>&1; then
+            gh release upload diag build-errore.txt --clobber
+          else
+            gh release create diag build-errore.txt --title "diagnostica" --notes "file di servizio" --target "${{ github.sha }}"
+          fi
 
       - name: Prepara il file da installare
         run: cp app/build/outputs/apk/release/app-release.apk salvatore.apk

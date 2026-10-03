@@ -37,6 +37,11 @@ public final class Model {
             this.model = model;
         }
 
+        /** Un cervello "locale" gira dentro il tablet: l'indirizzo è solo "local:". */
+        public boolean isLocal() {
+            return url != null && url.trim().startsWith("local:");
+        }
+
         public Map<String, Object> toMap() {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", id);

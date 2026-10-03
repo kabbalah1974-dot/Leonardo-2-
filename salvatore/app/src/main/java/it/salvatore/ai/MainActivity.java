@@ -60,6 +60,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         store = new Store(this);
         th = new Ui(this);
+        LocalBrain.install(this);
         buildUi();
         reloadModes();
     }
@@ -75,6 +76,18 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         store.saveChat(modeId, chat);
+    }
+
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        // Con poca memoria libera il modello dentro il tablet: si ricarica da solo alla prossima risposta.
+        if (level >= TRIM_MEMORY_BACKGROUND && !busy) LocalBrain.release();
+    }
+
+    /** Il testo come si vede a schermo: senza asterischi e simboli, tranne il codice dell'Ingegnere. */
+    private static String shown(Model.Entry e) {
+        return e.label.startsWith("Ingegnere") ? e.text : Fmt.plain(e.text);
     }
 
     // ------------------------------------------------------------------ schermata
@@ -220,7 +233,7 @@ public class MainActivity extends Activity {
         int maxW = Math.min(th.dp(760), (int) (getResources().getDisplayMetrics().widthPixels * 0.88f));
 
         final TextView t = new TextView(this);
-        t.setText(e.text);
+        t.setText(shown(e));
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, e.label.startsWith("Ingegnere") ? 14 : 16);
         t.setTextColor(user ? th.userText : th.text);
         t.setTextIsSelectable(true);
@@ -402,7 +415,7 @@ public class MainActivity extends Activity {
     private void appendLive(String d) {
         if (liveEntry == null || liveView == null) return;
         liveEntry.text = liveEntry.text + d;
-        liveView.setText(liveEntry.text);
+        liveView.setText(shown(liveEntry));
         scrollDown();
     }
 

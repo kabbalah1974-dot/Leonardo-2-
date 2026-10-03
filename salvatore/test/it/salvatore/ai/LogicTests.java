@@ -36,6 +36,9 @@ public class LogicTests {
         messagesTests();
         pipelineTests();
         clientTests();
+        fmtTests();
+        thinkTests();
+        localTests();
         System.out.println("Prove riuscite: " + ok + ", fallite: " + bad);
         if (bad > 0) System.exit(1);
     }
@@ -317,5 +320,77 @@ public class LogicTests {
         check(partial.startsWith("uno "), "client: testo parziale conservato");
 
         srv.stop(0);
+    }
+    // ---------- testo pulito ----------
+    static void fmtTests() {
+        eq(Fmt.plain("Apri **Play Store** e tocca __Installa__."), "Apri Play Store e tocca Installa.", "fmt: grassetto");
+        eq(Fmt.plain("* uno\n- due\n  * tre"), "• uno\n• due\n  • tre", "fmt: elenchi");
+        eq(Fmt.plain("## Titolo\ntesto"), "Titolo\ntesto", "fmt: titoli");
+        eq(Fmt.plain("```java\nint a = 2 * 3;\n```"), "int a = 2 * 3;", "fmt: blocchi di codice (il contenuto resta)");
+        eq(Fmt.plain("usa `ls` e *corsivo* qui"), "usa ls e corsivo qui", "fmt: backtick e corsivo");
+        eq(Fmt.plain("2 * 3 * 4"), "2 * 3 * 4", "fmt: moltiplicazioni non toccate");
+        eq(Fmt.plain(""), "", "fmt: vuoto");
+        eq(Fmt.plain("riga1\n\nriga3"), "riga1\n\nriga3", "fmt: righe vuote");
+    }
+
+    // ---------- pensieri ----------
+    static String feedAll(ThinkFilter f, String... parts) {
+        StringBuilder b = new StringBuilder();
+        for (String p : parts) b.append(f.feed(p));
+        b.append(f.finish());
+        return b.toString();
+    }
+
+    static void thinkTests() {
+        eq(feedAll(new ThinkFilter(), "Ciao mondo"), "Ciao mondo", "think: testo normale");
+        eq(feedAll(new ThinkFilter(), "<think>ragiono</think>Risposta"), "Risposta", "think: pensiero tolto");
+        eq(feedAll(new ThinkFilter(), "<thi", "nk>ragiono", " ancora</th", "ink>\n\nRis", "posta"), "Risposta", "think: tag spezzati");
+        eq(feedAll(new ThinkFilter(), "<think>\n\n</think>\n\nOk"), "Ok", "think: pensiero vuoto");
+        eq(feedAll(new ThinkFilter(), "a < b e c <t"), "a < b e c <t", "think: segni simili restano");
+        eq(feedAll(new ThinkFilter(), "<think>mai chiuso"), "", "think: pensiero mai chiuso");
+        eq(feedAll(new ThinkFilter(), "Prima <think>x</think>dopo"), "Prima dopo", "think: pensiero in mezzo");
+    }
+
+    // ---------- cervello dentro il tablet ----------
+    static void localTests() throws Exception {
+        check(new Model.Brain("1", "t", "local:", "", "m").isLocal(), "locale: riconosciuto");
+        check(!new Model.Brain("1", "t", "http://x/v1", "", "m").isLocal(), "locale: online non lo è");
+        check(!new Model.Brain("1", "t", "", "", "m").isLocal(), "locale: vuoto non lo è");
+
+        List<Model.Msg> msgs = new ArrayList<>();
+        msgs.add(new Model.Msg("user", "ciao"));
+        Model.Brain lb = new Model.Brain("1", "t", "local:", "", "f.litertlm");
+
+        OpenAiClient.local = null;
+        try {
+            OpenAiClient.chat(lb, msgs, null, null);
+            check(false, "locale: senza motore doveva dare errore");
+        } catch (OpenAiClient.ChatException e) {
+            check(e.getMessage().contains("non è pronto"), "locale: messaggio senza motore");
+        }
+
+        final String[] seen = {null};
+        OpenAiClient.local = (b, m, sink, c) -> {
+            seen[0] = b.model + ":" + m.size();
+            sink.onDelta("ri");
+            sink.onDelta("sposta");
+            return "risposta";
+        };
+        StringBuilder got = new StringBuilder();
+        eq(OpenAiClient.chat(lb, msgs, got::append, null), "risposta", "locale: risposta del motore");
+        eq(got.toString(), "risposta", "locale: pezzi inoltrati");
+        eq(seen[0], "f.litertlm:1", "locale: il motore riceve cervello e messaggi");
+        OpenAiClient.local = null;
+
+        // Ferma: l'azione registrata parte, anche se registrata dopo
+        final int[] hits = {0};
+        OpenAiClient.Cancel c1 = new OpenAiClient.Cancel();
+        c1.setOnCancel(() -> hits[0]++);
+        c1.cancel();
+        eq(hits[0], 1, "ferma: azione eseguita");
+        OpenAiClient.Cancel c2 = new OpenAiClient.Cancel();
+        c2.cancel();
+        c2.setOnCancel(() -> hits[0]++);
+        eq(hits[0], 2, "ferma: azione registrata dopo viene eseguita subito");
     }
 }

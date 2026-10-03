@@ -11,13 +11,20 @@ public final class Presets {
 
     /** {nome, indirizzo, modello} */
     public static final String[][] BRAINS = {
+        {"Dentro il tablet (senza internet)", "local:", "Qwen3-0.6B.litertlm"},
         {"Sul tablet o in rete locale", "http://127.0.0.1:8080/v1", "local"},
         {"Ollama (tablet o computer di casa)", "http://127.0.0.1:11434/v1", "llama3.2"},
-        {"Google Gemini (online)", "https://generativelanguage.googleapis.com/v1beta/openai/", "gemini-2.5-flash"},
+        {"Google Gemini (online)", "https://generativelanguage.googleapis.com/v1beta/openai/", "gemini-3.8-flash"},
         {"Groq (online)", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"},
         {"OpenRouter (online)", "https://openrouter.ai/api/v1", "openrouter/auto"},
         {"Mio server (a pagamento)", "", ""},
     };
+
+    /** Modello consigliato per il cervello dentro il tablet (libero, senza account). */
+    public static final String LOCAL_FILE = "Qwen3-0.6B.litertlm";
+    public static final String LOCAL_URL =
+            "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm";
+    public static final int LOCAL_MB = 586;
 
     public static final String ID_SALVATORE = "salvatore";
     public static final String ID_INGEGNERE = "ingegnere";
