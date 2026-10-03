@@ -210,6 +210,74 @@ public final class OpenAiClient implements Pipeline.Llm {
         }
     }
 
+
+    /** Indirizzo da cui chiedere la lista dei modelli. */
+    public static String modelsEndpoint(String base) {
+        String b = base == null ? "" : base.trim();
+        while (b.endsWith("/")) b = b.substring(0, b.length() - 1);
+        if (b.endsWith("/chat/completions")) b = b.substring(0, b.length() - "/chat/completions".length());
+        return b + "/models";
+    }
+
+    /** Legge i nomi dei modelli dalla risposta del servizio (accetta i formati più comuni). */
+    static List<String> parseModels(String body) {
+        List<String> out = new ArrayList<>();
+        Object o;
+        try {
+            o = Json.parse(body);
+        } catch (RuntimeException e) {
+            return out;
+        }
+        Object list = Json.path(o, "data");
+        if (!(list instanceof List)) list = Json.path(o, "models");
+        if (!(list instanceof List) && o instanceof List) list = o;
+        if (!(list instanceof List)) return out;
+        for (Object x : (List<?>) list) {
+            String id = x instanceof String ? (String) x : Json.str(Json.path(x, "id"));
+            if (id == null) id = Json.str(Json.path(x, "name"));
+            if (id == null || id.isEmpty()) continue;
+            if (id.startsWith("models/")) id = id.substring(7);
+            if (!out.contains(id)) out.add(id);
+        }
+        java.util.Collections.sort(out);
+        return out;
+    }
+
+    /** Chiede al servizio quali modelli ha. */
+    public static List<String> listModels(Model.Brain brain) throws ChatException {
+        if (brain == null || brain.url == null || brain.url.trim().isEmpty()) {
+            throw new ChatException("Scrivi prima l'indirizzo del cervello.");
+        }
+        String address = modelsEndpoint(brain.url);
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(address).openConnection();
+            conn.setConnectTimeout(15000);
+            conn.setReadTimeout(30000);
+            conn.setRequestProperty("Accept", "application/json");
+            String key = brain.key == null ? "" : brain.key.trim();
+            if (!key.isEmpty()) conn.setRequestProperty("Authorization", "Bearer " + key);
+            int code = conn.getResponseCode();
+            if (code >= 400) throw new ChatException(httpError(code, readAll(conn.getErrorStream())));
+            List<String> l = parseModels(readAll(conn.getInputStream()));
+            if (l.isEmpty()) throw new ChatException("Questo servizio non ha dato la lista dei modelli. Scrivi il nome a mano.");
+            return l;
+        } catch (ChatException e) {
+            throw e;
+        } catch (UnknownHostException e) {
+            throw new ChatException("Non trovo l'indirizzo (" + address + "). Controlla internet e l'indirizzo.");
+        } catch (IOException e) {
+            throw new ChatException("Non riesco a collegarmi (" + address + "). Dettaglio: " + e.getMessage());
+        } finally {
+            if (conn != null) {
+                try {
+                    conn.disconnect();
+                } catch (RuntimeException ignored) {
+                }
+            }
+        }
+    }
+
     static String errorText(Object o) {
         Object e = Json.path(o, "error");
         if (e == null) return null;

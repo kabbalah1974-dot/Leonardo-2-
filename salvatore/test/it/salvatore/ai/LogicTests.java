@@ -38,6 +38,7 @@ public class LogicTests {
         clientTests();
         fmtTests();
         bytesTests();
+        modelsTests();
         thinkTests();
         localTests();
         autoTests();
@@ -473,6 +474,15 @@ public class LogicTests {
         }
         OpenAiClient.local = null;
         srv.stop(0);
+    }
+    static void modelsTests() {
+        eq(OpenAiClient.modelsEndpoint("https://api.groq.com/openai/v1/"), "https://api.groq.com/openai/v1/models", "modelli: indirizzo");
+        eq(OpenAiClient.modelsEndpoint("https://x.it/v1/chat/completions"), "https://x.it/v1/models", "modelli: indirizzo da chat");
+        eq(OpenAiClient.parseModels("{\"data\":[{\"id\":\"b\"},{\"id\":\"a\"},{\"id\":\"a\"}]}").toString(), "[a, b]", "modelli: formato OpenAI");
+        eq(OpenAiClient.parseModels("{\"data\":[{\"id\":\"models/gemini-x\"}]}").toString(), "[gemini-x]", "modelli: prefisso Gemini");
+        eq(OpenAiClient.parseModels("non json").toString(), "[]", "modelli: risposta strana");
+        eq(Presets.keyLink("https://api.mistral.ai/v1"), "https://console.mistral.ai/api-keys", "chiave: link Mistral");
+        eq(Presets.keyLink("http://127.0.0.1:8080/v1"), "", "chiave: nessun link");
     }
     static void bytesTests() {
         eq(Fmt.fixBytes("Ciao!\u0120\u01D2\u0141\u012C" + "Se hai"), "Ciao! Se hai", "byte: pezzi di emoji tolti");

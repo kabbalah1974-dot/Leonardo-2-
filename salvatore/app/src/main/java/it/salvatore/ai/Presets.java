@@ -14,16 +14,33 @@ public final class Presets {
         {"Dentro il tablet (senza internet)", "local:", "Qwen3-0.6B.litertlm"},
         {"Sul tablet o in rete locale", "http://127.0.0.1:8080/v1", "local"},
         {"Ollama (tablet o computer di casa)", "http://127.0.0.1:11434/v1", "llama3.2"},
-        {"Google Gemini (online)", "https://generativelanguage.googleapis.com/v1beta/openai/", "gemini-3.8-flash"},
-        {"Groq (online)", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"},
-        {"OpenRouter (online)", "https://openrouter.ai/api/v1", "openrouter/auto"},
-        {"Mistral (online, gratis con limiti)", "https://api.mistral.ai/v1", "mistral-small-latest"},
-        {"Mistral Codestral (codice, gratis)", "https://codestral.mistral.ai/v1", "codestral-latest"},
-        {"NVIDIA (online, gratis con limiti)", "https://integrate.api.nvidia.com/v1", "meta/llama-3.3-70b-instruct"},
-        {"Cerebras (online, gratis con limiti)", "https://api.cerebras.ai/v1", "gpt-oss-120b"},
+        {"Google Gemini (online, gratis)", "https://generativelanguage.googleapis.com/v1beta/openai/", "gemini-3.8-flash"},
+        {"Groq (online, gratis)", "https://api.groq.com/openai/v1", "openai/gpt-oss-120b"},
+        {"OpenRouter (online, gratis con limiti)", "https://openrouter.ai/api/v1", "openrouter/free"},
+        {"Mistral (online, gratis con limiti)", "https://api.mistral.ai/v1", "mistral-medium-latest"},
+        {"Mistral Codestral (codice, gratis)", "https://api.mistral.ai/v1", "codestral-latest"},
+        {"SambaNova (online, gratis con limiti)", "https://api.sambanova.ai/v1", "DeepSeek-V3.1"},
+        {"NVIDIA (online, gratis con limiti)", "https://integrate.api.nvidia.com/v1", "nvidia/nemotron-3-super-120b-a12b"},
+        {"Z.ai GLM (online, gratis)", "https://api.z.ai/api/paas/v4", "glm-4.7-flash"},
+        {"Cohere (prova gratis)", "https://api.cohere.com/compatibility/v1", "command-a-03-2025"},
         {"Altro servizio (scrivi tu indirizzo e modello)", "", ""},
         {"Mio server (a pagamento)", "", ""},
     };
+
+    /** Pagina dove si crea la chiave gratis, in base all'indirizzo. Vuoto se non la conosco. */
+    public static String keyLink(String url) {
+        String u = url == null ? "" : url.toLowerCase();
+        if (u.contains("generativelanguage.googleapis.com")) return "https://aistudio.google.com/apikey";
+        if (u.contains("api.groq.com")) return "https://console.groq.com/keys";
+        if (u.contains("openrouter.ai")) return "https://openrouter.ai/settings/keys";
+        if (u.contains("mistral.ai")) return "https://console.mistral.ai/api-keys";
+        if (u.contains("sambanova.ai")) return "https://cloud.sambanova.ai";
+        if (u.contains("nvidia.com")) return "https://build.nvidia.com/settings/api-keys";
+        if (u.contains("z.ai")) return "https://z.ai";
+        if (u.contains("cohere.com")) return "https://dashboard.cohere.com/api-keys";
+        if (u.contains("cerebras.ai")) return "https://cloud.cerebras.ai";
+        return "";
+    }
 
     /** Modello consigliato per il cervello dentro il tablet (libero, senza account). */
     public static final String LOCAL_FILE = "Qwen3-0.6B.litertlm";

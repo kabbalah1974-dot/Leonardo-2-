@@ -37,7 +37,7 @@ jobs:
         run: |
           mkdir -p prova
           S=app/src/main/java/it/salvatore/ai
-          javac -encoding UTF-8 -d prova $S/Json.java $S/Model.java $S/Pipeline.java $S/OpenAiClient.java $S/Fmt.java $S/ThinkFilter.java $S/AutoBrain.java $S/SmartBrain.java test/it/salvatore/ai/LogicTests.java
+          javac -encoding UTF-8 -d prova $S/Json.java $S/Model.java $S/Pipeline.java $S/OpenAiClient.java $S/Fmt.java $S/ThinkFilter.java $S/AutoBrain.java $S/SmartBrain.java $S/Presets.java test/it/salvatore/ai/LogicTests.java
           java -Dfile.encoding=UTF-8 -cp prova it.salvatore.ai.LogicTests
 
       - name: Costruisci l'app

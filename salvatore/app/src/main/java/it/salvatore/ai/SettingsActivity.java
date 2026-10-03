@@ -38,7 +38,7 @@ public class SettingsActivity extends Activity {
     private ArrayAdapter<String> brainAd;
     private Spinner brainSpinner;
     private EditText bName, bUrl, bKey, bModel;
-    private LinearLayout remoteBox, localBox;
+    private LinearLayout remoteBox, localBox, modelsBox;
     private TextView localStatus;
     private Button btnDownload, btnPick, btnDelete;
     private volatile boolean busyModel = false;
@@ -194,9 +194,14 @@ public class SettingsActivity extends Activity {
             bKey.setInputType(InputType.TYPE_CLASS_TEXT | t);
         });
         remoteBox.addView(show);
+        remoteBox.addView(th.button("Prendi la chiave (apre il sito)", v -> onKeyLink()));
         bc.addView(remoteBox);
 
         labeled(bc, "Modello (nome del file, se è dentro il tablet)", bModel);
+        modelsBox = new LinearLayout(this);
+        modelsBox.setOrientation(LinearLayout.VERTICAL);
+        modelsBox.addView(th.button("Cerca modelli", v -> onFindModels()));
+        bc.addView(modelsBox);
 
         localBox = new LinearLayout(this);
         localBox.setOrientation(LinearLayout.VERTICAL);
@@ -290,7 +295,7 @@ public class SettingsActivity extends Activity {
         rl.topMargin = th.dp(12);
         ac.addView(reset, rl);
 
-        TextView about = th.label("Salvatore · versione 1.3.1\nLe chat, i cervelli e le chiavi restano solo su questo tablet.",
+        TextView about = th.label("Salvatore · versione 1.3.2\nLe chat, i cervelli e le chiavi restano solo su questo tablet.",
                 13, th.sub, false);
         about.setPadding(th.dp(4), th.dp(4), 0, 0);
         root.addView(about);
@@ -344,6 +349,7 @@ public class SettingsActivity extends Activity {
         boolean local = shownBrain != null && shownBrain.isLocal();
         remoteBox.setVisibility(local ? View.GONE : View.VISIBLE);
         localBox.setVisibility(local ? View.VISIBLE : View.GONE);
+        modelsBox.setVisibility(local ? View.GONE : View.VISIBLE);
         if (local) refreshLocalStatus(null);
     }
 
@@ -404,6 +410,53 @@ public class SettingsActivity extends Activity {
                 })
                 .setNegativeButton("Annulla", null)
                 .show();
+    }
+
+    private void onKeyLink() {
+        String link = Presets.keyLink(bUrl.getText().toString());
+        if (link.isEmpty()) {
+            Toast.makeText(this, "Per questo servizio non conosco la pagina. Cercala sul loro sito (\"API keys\").", Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(link)));
+            Toast.makeText(this, "Crea la chiave, copiala e torna qui a incollarla.", Toast.LENGTH_LONG).show();
+        } catch (RuntimeException e) {
+            Toast.makeText(this, "Non riesco ad aprire il browser. Vai a: " + link, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void onFindModels() {
+        final Model.Brain b = new Model.Brain(shownBrain.id, shownBrain.name,
+                bUrl.getText().toString().trim(), bKey.getText().toString().trim(), "");
+        Toast.makeText(this, "Cerco i modelli…", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            List<String> found = null;
+            String err = null;
+            try {
+                found = OpenAiClient.listModels(b);
+            } catch (OpenAiClient.ChatException e) {
+                err = e.getMessage();
+            } catch (RuntimeException e) {
+                err = "Errore inatteso: " + e;
+            }
+            final List<String> fl = found;
+            final String fe = err;
+            ui.post(() -> {
+                if (isFinishing()) return;
+                if (fl == null) {
+                    new AlertDialog.Builder(this).setTitle("Cerca modelli").setMessage(fe)
+                            .setPositiveButton("OK", null).show();
+                    return;
+                }
+                final String[] names = fl.toArray(new String[0]);
+                new AlertDialog.Builder(this)
+                        .setTitle("Scegli il modello (" + names.length + ")")
+                        .setItems(names, (d, which) -> bModel.setText(names[which]))
+                        .setNegativeButton("Annulla", null)
+                        .show();
+            });
+        }).start();
     }
 
     private void onTest() {
