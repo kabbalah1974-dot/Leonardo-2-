@@ -40,9 +40,9 @@ jobs:
           {
             echo "== classi"
             unzip -l classes.jar | awk '{print $4}' | grep class | grep -v '\$' | head -150
-            for c in Engine EngineConfig Backend Backend\$CPU Conversation ConversationConfig MessageCallback Message Contents Content SamplerConfig ExperimentalApi; do
+            for c in Engine\$Companion Conversation ConversationConfig Contents\$Companion Contents Message\$Companion Message Role Content Content\$Text Content\$Companion ThinkingConfig ThinkingConfig\$Companion Channel ExperimentalFlags ExperimentalApi; do
               echo; echo "=== $c"
-              javap -p -cp classes.jar "com.google.ai.edge.litertlm.$c" 2>&1 | head -60
+              javap -p -cp classes.jar "com.google.ai.edge.litertlm.$c" 2>&1 | cut -c1-600
             done
           } >> ../../diag.txt 2>&1
       - name: Pubblica il risultato
@@ -54,3 +54,4 @@ jobs:
           else
             gh release create diag diag.txt --title "diagnostica" --notes "file di servizio" --target "${{ github.sha }}"
           fi
+# v2
