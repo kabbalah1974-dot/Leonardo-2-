@@ -41,6 +41,7 @@ public class LogicTests {
         modelsTests();
         projectTests();
         teamTests();
+        keyGuardTests();
         thinkTests();
         localTests();
         autoTests();
@@ -476,6 +477,26 @@ public class LogicTests {
         }
         OpenAiClient.local = null;
         srv.stop(0);
+    }
+    static void keyGuardTests() {
+        List<Model.Brain> stored = new ArrayList<>();
+        stored.add(new Model.Brain("a", "A", "u", "KEYA", "m"));
+        stored.add(new Model.Brain("b", "B", "u", "KEYB", "m"));
+        List<Model.Brain> now = new ArrayList<>();
+        now.add(new Model.Brain("a", "A", "u", "", "m"));
+        now.add(new Model.Brain("b", "B", "u", "  ", "m"));
+        now.add(new Model.Brain("c", "C", "u", "", "m"));
+        java.util.Set<String> cl = new java.util.HashSet<>();
+        cl.add("b");
+        List<String> saved = KeyGuard.protect(now, stored, cl);
+        eq(now.get(0).key, "KEYA", "chiavi: non si cancella per sbaglio");
+        eq(now.get(1).key.trim(), "", "chiavi: tolta apposta resta tolta");
+        eq(now.get(2).key, "", "chiavi: cervello nuovo senza chiave");
+        eq(saved.size(), 1, "chiavi: una salvata in extremis");
+        List<Model.Brain> upd = new ArrayList<>();
+        upd.add(new Model.Brain("a", "A", "u", "NUOVA", "m"));
+        KeyGuard.protect(upd, stored, null);
+        eq(upd.get(0).key, "NUOVA", "chiavi: una chiave nuova vince");
     }
     static void teamTests() throws Exception {
         List<String> names = new ArrayList<>();

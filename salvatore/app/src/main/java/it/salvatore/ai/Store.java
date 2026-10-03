@@ -17,6 +17,23 @@ public final class Store {
     }
 
     // ---- cervelli ----
+    /** Quello che c'è davvero salvato (senza il cervello di partenza aggiunto quando la lista è vuota). */
+    private List<Model.Brain> brainsStored() {
+        List<Model.Brain> out = new ArrayList<>();
+        Object o = read("brains");
+        if (o instanceof List) {
+            for (Object x : (List<?>) o) {
+                Model.Brain b = Model.Brain.fromMap(x);
+                if (b != null) out.add(b);
+            }
+        }
+        return out;
+    }
+
+    public String keyLog() {
+        return sp.getString("keylog", "");
+    }
+
     public List<Model.Brain> brains() {
         List<Model.Brain> out = new ArrayList<>();
         Object o = read("brains");
@@ -34,6 +51,25 @@ public final class Store {
     }
 
     public void saveBrains(List<Model.Brain> brains) {
+        saveBrains(brains, null);
+    }
+
+    /** Salva i cervelli. Una chiave già presente non si cancella, a meno che l'utente l'abbia tolta apposta (cleared). */
+    public void saveBrains(List<Model.Brain> brains, java.util.Set<String> cleared) {
+        List<String> saved = KeyGuard.protect(brains, brainsStored(), cleared);
+        if (!saved.isEmpty()) {
+            StringBuilder where = new StringBuilder();
+            StackTraceElement[] st = new Throwable().getStackTrace();
+            for (int i = 1; i < Math.min(st.length, 7); i++) {
+                where.append(st[i].getClassName().replace("it.salvatore.ai.", "")).append('.')
+                        .append(st[i].getMethodName()).append(':').append(st[i].getLineNumber()).append(' ');
+            }
+            String line = java.text.DateFormat.getDateTimeInstance().format(new java.util.Date()) + " · salvata la chiave di "
+                    + String.join(", ", saved) + " · " + where + "\n";
+            String log = sp.getString("keylog", "") + line;
+            if (log.length() > 3000) log = log.substring(log.length() - 3000);
+            sp.edit().putString("keylog", log).apply();
+        }
         List<Object> l = new ArrayList<>();
         for (Model.Brain b : brains) l.add(b.toMap());
         sp.edit().putString("brains", Json.write(l)).apply();

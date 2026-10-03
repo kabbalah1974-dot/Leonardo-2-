@@ -45,6 +45,7 @@ public class SettingsActivity extends Activity {
     private volatile boolean busyModel = false;
     private boolean filling = false;
     private boolean dName, dUrl, dKey, dModel;
+    private final java.util.Set<String> clearedKeys = new java.util.HashSet<>();
     private OpenAiClient.Cancel modelCancel;
     private static final int REQ_PICK = 77;
 
@@ -83,7 +84,7 @@ public class SettingsActivity extends Activity {
     private void persist() {
         commitBrain();
         commitAgent();
-        store.saveBrains(brains);
+        store.saveBrains(brains, clearedKeys);
         store.setActiveBrainId(shownBrain.id);
         store.saveAgents(agents);
         persistProject();
@@ -202,7 +203,9 @@ public class SettingsActivity extends Activity {
             bKey.setInputType(InputType.TYPE_CLASS_TEXT | t);
         });
         remoteBox.addView(show);
-        remoteBox.addView(th.button("Prendi la chiave (apre il sito)", v -> onKeyLink()));
+        remoteBox.addView(buttons(
+                th.button("Prendi la chiave (apre il sito)", v -> onKeyLink()),
+                th.button("Togli la chiave", v -> onClearKey())));
         bc.addView(remoteBox);
 
         labeled(bc, "Modello (nome del file, se è dentro il tablet)", bModel);
@@ -390,10 +393,18 @@ public class SettingsActivity extends Activity {
         rl.topMargin = th.dp(12);
         ac.addView(reset, rl);
 
-        TextView about = th.label("Salvatore · versione 1.5\nLe chat, i cervelli e le chiavi restano solo su questo tablet.",
+        TextView about = th.label("Salvatore · versione 1.5.1\nLe chat, i cervelli e le chiavi restano solo su questo tablet.",
                 13, th.sub, false);
         about.setPadding(th.dp(4), th.dp(4), 0, 0);
         root.addView(about);
+        String kl = store.keyLog();
+        if (!kl.isEmpty()) {
+            TextView klv = th.label("Protezione chiavi: ho evitato che una chiave venisse cancellata. Dettagli (mandali a Claude):\n" + kl,
+                    11, th.sub, false);
+            klv.setPadding(th.dp(4), th.dp(8), 0, 0);
+            klv.setTextIsSelectable(true);
+            root.addView(klv);
+        }
 
         setContentView(sv);
     }
@@ -453,7 +464,14 @@ public class SettingsActivity extends Activity {
         if (dName) shownBrain.name = bName.getText().toString().trim();
         if (!shownBrain.isLocal()) {
             if (dUrl) shownBrain.url = bUrl.getText().toString().trim();
-            if (dKey) shownBrain.key = bKey.getText().toString().trim();
+            if (dKey) {
+                String nk = bKey.getText().toString().trim();
+                // Una casella vuota non cancella la chiave: per toglierla c'è il tasto "Togli la chiave".
+                if (!nk.isEmpty()) {
+                    shownBrain.key = nk;
+                    clearedKeys.remove(shownBrain.id);
+                }
+            }
         }
         if (dModel) shownBrain.model = bModel.getText().toString().trim();
         dName = dUrl = dKey = dModel = false;
@@ -537,6 +555,23 @@ public class SettingsActivity extends Activity {
                         .show();
             });
         }).start();
+    }
+
+    private void onClearKey() {
+        new AlertDialog.Builder(this)
+                .setTitle("Togli la chiave")
+                .setMessage("Cancello la chiave di \"" + brainLabel(shownBrain) + "\"? Poi dovrai incollarne una nuova.")
+                .setPositiveButton("Sì, togli", (d, w) -> {
+                    clearedKeys.add(shownBrain.id);
+                    shownBrain.key = "";
+                    filling = true;
+                    bKey.setText("");
+                    filling = false;
+                    dKey = false;
+                    store.saveBrains(brains, clearedKeys);
+                })
+                .setNegativeButton("No", null)
+                .show();
     }
 
     private void onKeyLink() {
