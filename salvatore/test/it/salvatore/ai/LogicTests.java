@@ -39,6 +39,7 @@ public class LogicTests {
         fmtTests();
         bytesTests();
         modelsTests();
+        projectTests();
         thinkTests();
         localTests();
         autoTests();
@@ -473,6 +474,78 @@ public class LogicTests {
             check(e.getMessage().contains("problema"), "smart: errore 503 chiaro");
         }
         OpenAiClient.local = null;
+        srv.stop(0);
+    }
+    static void projectTests() throws Exception {
+        eq(Project.merge("A\n", "A\n", "A\nR\n"), "A\nR\n", "progetto: tablet fermo, vale GitHub");
+        eq(Project.merge("A\n", "A\nL\n", "A\n"), "A\nL\n", "progetto: GitHub fermo, vale tablet");
+        eq(Project.merge("A\n", "A\nL\n", "A\nR\n"), "A\nR\nL\n", "progetto: righe in fondo si sommano");
+        check(Project.merge("A\n", "X\n", "A\nR\n").contains("Versione del tablet"), "progetto: conflitto tiene tutte e due");
+        String d = Project.appendLog("", "- riga");
+        check(d.contains(Project.LOG_HEADER) && d.endsWith("- riga\n"), "progetto: registro creato");
+        eq(Project.appendLog(d, "a\nb").endsWith("a b\n"), true, "progetto: riga unica");
+        check(Project.forPrompt("x".repeat(9000), 3000).length() < 3100, "progetto: taglio per il cervello");
+        check(Project.logLine("2026-10-03 13:00", "Salvatore", "ciao?", "ciao a te").startsWith("- 2026-10-03 13:00 · Salvatore"), "progetto: riga di registro");
+
+        List<Model.Entry> ch = new ArrayList<>();
+        ch.add(new Model.Entry("", "user", "domanda"));
+        ch.add(new Model.Entry("Salvatore · Gemini", "assistant", "uno"));
+        ch.add(new Model.Entry("Salvatore · Groq", "assistant", "due"));
+        List<Model.Msg> ms = Model.buildMessages("sys", ch, 20);
+        eq(ms.size(), 3, "parallelo: risposte unite in un messaggio");
+        check(ms.get(2).content.contains("[Salvatore · Gemini] uno") && ms.get(2).content.contains("[Salvatore · Groq] due"), "parallelo: nomi dei cervelli");
+
+        // GitHub finto
+        final String[] stored = {null};
+        final String[] shaNow = {null};
+        final List<String> seen = new ArrayList<>();
+        HttpServer srv = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        srv.createContext("/repos/u/r/contents/p/F.md", ex -> {
+            seen.add(ex.getRequestMethod() + " auth=" + ex.getRequestHeaders().getFirst("Authorization"));
+            byte[] out;
+            int code = 200;
+            if (ex.getRequestMethod().equals("GET")) {
+                if (stored[0] == null) {
+                    code = 404;
+                    out = "{\"message\":\"Not Found\"}".getBytes(StandardCharsets.UTF_8);
+                } else {
+                    String b64 = java.util.Base64.getMimeEncoder().encodeToString(stored[0].getBytes(StandardCharsets.UTF_8));
+                    out = ("{\"sha\":\"" + shaNow[0] + "\",\"content\":\"" + b64 + "\"}").getBytes(StandardCharsets.UTF_8);
+                }
+            } else {
+                String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                Object o = Json.parse(body);
+                stored[0] = new String(java.util.Base64.getDecoder().decode(Json.str(Json.path(o, "content"))), StandardCharsets.UTF_8);
+                shaNow[0] = "sha" + stored[0].length();
+                out = "{}".getBytes(StandardCharsets.UTF_8);
+            }
+            ex.sendResponseHeaders(code, out.length);
+            try (OutputStream os = ex.getResponseBody()) {
+                os.write(out);
+            }
+        });
+        srv.start();
+        GitHubSync g = new GitHubSync("http://127.0.0.1:" + srv.getAddress().getPort());
+        eq(g.sync("u/r", "p/F.md", "tok", "", "ciao\nè qui\n", true), "ciao\nè qui\n", "github: crea il file");
+        eq(stored[0], "ciao\nè qui\n", "github: file scritto (accenti ok)");
+        stored[0] = "ciao\nè qui\nda GitHub\n";
+        shaNow[0] = "shaX";
+        String res = g.sync("u/r", "p/F.md", "tok", "ciao\nè qui\n", "ciao\nè qui\nlocale\n", true);
+        eq(res, "ciao\nè qui\nda GitHub\nlocale\n", "github: unisce le righe");
+        eq(stored[0], res, "github: scrive l'unione");
+        check(seen.get(0).equals("GET auth=Bearer tok"), "github: manda la chiave");
+        try {
+            g.sync("brutto", "p/F.md", "tok", "", "x", true);
+            check(false, "github: nome deposito sbagliato");
+        } catch (OpenAiClient.ChatException e) {
+            check(e.getMessage().contains("nome-utente"), "github: errore deposito");
+        }
+        try {
+            g.sync("u/r", "p/F.md", "", "", "x", true);
+            check(false, "github: senza chiave");
+        } catch (OpenAiClient.ChatException e) {
+            check(e.getMessage().contains("chiave"), "github: errore chiave");
+        }
         srv.stop(0);
     }
     static void modelsTests() {

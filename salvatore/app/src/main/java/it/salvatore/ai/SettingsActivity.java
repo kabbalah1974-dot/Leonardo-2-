@@ -39,6 +39,7 @@ public class SettingsActivity extends Activity {
     private Spinner brainSpinner;
     private EditText bName, bUrl, bKey, bModel;
     private LinearLayout remoteBox, localBox, modelsBox;
+    private EditText pText, gToken, gRepo, gPath;
     private TextView localStatus;
     private Button btnDownload, btnPick, btnDelete;
     private volatile boolean busyModel = false;
@@ -85,6 +86,13 @@ public class SettingsActivity extends Activity {
         store.saveBrains(brains);
         store.setActiveBrainId(shownBrain.id);
         store.saveAgents(agents);
+        persistProject();
+    }
+
+    private void persistProject() {
+        if (pText == null) return;
+        store.setProject(pText.getText().toString());
+        store.setGh(gToken.getText().toString().trim(), gRepo.getText().toString().trim(), gPath.getText().toString().trim());
     }
 
     // ------------------------------------------------------------------ schermata
@@ -248,6 +256,61 @@ public class SettingsActivity extends Activity {
         ex.setPadding(0, th.dp(12), 0, 0);
         bc.addView(ex);
 
+        // ---- Progetto e squadra ----
+        LinearLayout pc = card(root);
+        pc.addView(th.label("Progetto e squadra", 20, th.text, true));
+        TextView ph = th.label("La scheda del progetto è un testo che tutti i cervelli leggono prima di rispondere: così lavorano sulla stessa cosa. "
+                + "Salvatore ci scrive da solo un registro di quello che è stato fatto, e la tiene allineata su GitHub, dove la leggo anche io.",
+                14, th.sub, false);
+        ph.setPadding(0, th.dp(4), 0, th.dp(8));
+        pc.addView(ph);
+
+        CheckBox par = new CheckBox(this);
+        par.setText("Lavora in parallelo: ogni domanda va a tutti i cervelli online che hanno la chiave, e ognuno risponde");
+        par.setTextColor(th.text);
+        par.setChecked(store.parallel());
+        par.setOnCheckedChangeListener((b, on) -> store.setParallel(on));
+        pc.addView(par);
+        TextView pph = th.label("Attenzione: ogni cervello usa le sue richieste gratis, quindi si consumano più in fretta. "
+                + "Con 2 o 3 cervelli va bene.", 13, th.sub, false);
+        pph.setPadding(th.dp(32), 0, 0, th.dp(8));
+        pc.addView(pph);
+
+        pText = th.field("Scrivi qui l'obiettivo e le decisioni del progetto", true);
+        pText.setMinLines(6);
+        pText.setMaxLines(16);
+        pText.setText(store.project().isEmpty() ? Project.TEMPLATE : store.project());
+        labeled(pc, "Scheda del progetto", pText);
+
+        gRepo = th.field("nome-utente/nome-deposito", false);
+        gRepo.setText(store.ghRepo());
+        gPath = th.field("progetto/SALVATORE.md", false);
+        gPath.setText(store.ghPath());
+        gToken = th.field("Chiave GitHub (inizia con github_pat_ o ghp_)", false);
+        gToken.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        gToken.setText(store.ghToken());
+        labeled(pc, "Deposito GitHub", gRepo);
+        labeled(pc, "File del progetto", gPath);
+        labeled(pc, "Chiave GitHub", gToken);
+
+        CheckBox gauto = new CheckBox(this);
+        gauto.setText("Salva da solo su GitHub dopo ogni risposta");
+        gauto.setTextColor(th.text);
+        gauto.setChecked(store.ghAuto());
+        gauto.setOnCheckedChangeListener((b, on) -> store.setGhAuto(on));
+        LinearLayout.LayoutParams gl = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        gl.topMargin = th.dp(8);
+        pc.addView(gauto, gl);
+        pc.addView(buttons(
+                th.button("Salva su GitHub", v -> onGitHub(true)),
+                th.button("Leggi da GitHub", v -> onGitHub(false))));
+        TextView gh2 = th.label("La chiave GitHub si crea su github.com → Settings → Developer settings → Fine-grained tokens, "
+                + "scegliendo solo questo deposito e il permesso \"Contents: Read and write\". Resta solo su questo tablet.",
+                13, th.sub, false);
+        gh2.setPadding(0, th.dp(8), 0, 0);
+        pc.addView(gh2);
+
         // ---- Agenti ----
         LinearLayout ac = card(root);
         ac.addView(th.label("Agenti", 20, th.text, true));
@@ -295,7 +358,7 @@ public class SettingsActivity extends Activity {
         rl.topMargin = th.dp(12);
         ac.addView(reset, rl);
 
-        TextView about = th.label("Salvatore · versione 1.3.2\nLe chat, i cervelli e le chiavi restano solo su questo tablet.",
+        TextView about = th.label("Salvatore · versione 1.4\nLe chat, i cervelli e le chiavi restano solo su questo tablet.",
                 13, th.sub, false);
         about.setPadding(th.dp(4), th.dp(4), 0, 0);
         root.addView(about);
@@ -410,6 +473,38 @@ public class SettingsActivity extends Activity {
                 })
                 .setNegativeButton("Annulla", null)
                 .show();
+    }
+
+    private void onGitHub(final boolean write) {
+        persist();
+        final String token = store.ghToken(), repo = store.ghRepo(), path = store.ghPath();
+        final String local = store.project();
+        final String base = store.projectBase();
+        Toast.makeText(this, "Parlo con GitHub…", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            String res = null, err = null;
+            try {
+                res = new GitHubSync().sync(repo, path, token, base, local, write);
+            } catch (OpenAiClient.ChatException e) {
+                err = e.getMessage();
+            } catch (RuntimeException e) {
+                err = "Errore inatteso: " + e;
+            }
+            final String fr = res, fe = err;
+            ui.post(() -> {
+                if (isFinishing()) return;
+                if (fr != null) {
+                    store.setProject(fr);
+                    store.setProjectBase(fr);
+                    pText.setText(fr);
+                }
+                new AlertDialog.Builder(this)
+                        .setTitle("GitHub")
+                        .setMessage(fe != null ? fe : (write ? "Fatto: la scheda è salvata su GitHub." : "Fatto: ho letto la scheda da GitHub."))
+                        .setPositiveButton("OK", null)
+                        .show();
+            });
+        }).start();
     }
 
     private void onKeyLink() {

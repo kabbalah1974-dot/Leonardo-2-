@@ -5,6 +5,7 @@ on:
     branches: [main, master]
     paths-ignore:
       - 'salvatore/**'
+      - 'progetto/**'
       - '.github/workflows/salvatore.yml'
   workflow_dispatch:
 

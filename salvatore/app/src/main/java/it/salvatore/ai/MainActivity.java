@@ -25,6 +25,9 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 import java.util.ArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.List;
 
 /** Schermata principale di Salvatore: la chat. */
@@ -52,6 +55,9 @@ public class MainActivity extends Activity {
 
     private boolean busy = false;
     private OpenAiClient.Cancel cancel;
+    private final ExecutorService projectWork = Executors.newSingleThreadExecutor();
+    private String pendingQ = "";
+    private final List<Model.Entry> pendingReplies = new ArrayList<>();
     private Model.Entry liveEntry;
     private TextView liveView;
 
@@ -325,7 +331,12 @@ public class MainActivity extends Activity {
                 Net.isOnline(this), b -> ModelStore.isReady(this, b.model));
         input.setText("");
         if (chat.isEmpty()) list.removeAllViews(); // toglie il testo di benvenuto
-        if (PIPELINE.equals(modeId)) startPipeline(text, choice);
+        if (PIPELINE.equals(modeId)) {
+            startPipeline(text, choice);
+            return;
+        }
+        List<Model.Brain> team = store.parallel() && Net.isOnline(this) ? parallelBrains() : new ArrayList<>();
+        if (team.size() >= 2) startParallel(text, team);
         else startChat(text, choice);
     }
 
@@ -344,7 +355,10 @@ public class MainActivity extends Activity {
         chat.add(reply);
         liveEntry = reply;
         liveView = addBubble(reply);
-        final List<Model.Msg> msgs = Model.buildMessages(ag.prompt, chat, 20);
+        final List<Model.Msg> msgs = Model.buildMessages(systemFor(ag, choice.primary.isLocal()), chat, 20);
+        pendingQ = text;
+        pendingReplies.clear();
+        pendingReplies.add(reply);
         setBusy(true);
         scrollDown();
 
@@ -449,6 +463,116 @@ public class MainActivity extends Activity {
         if (err != null) addNotice(err);
         setBusy(false);
         store.saveChat(modeId, chat);
+        logProject();
+    }
+
+    // ------------------------------------------------------------------ progetto condiviso
+
+    private String systemFor(Model.Agent ag, boolean local) {
+        String proj = store.project().trim();
+        if (proj.isEmpty() || proj.equals(Project.TEMPLATE.trim())) return ag.prompt;
+        return ag.prompt + "\n\nScheda del progetto, condivisa con le altre AI che lavorano allo stesso progetto. "
+                + "Tienine conto e non contraddire le decisioni già prese:\n" + Project.forPrompt(proj, local ? 1200 : 3500);
+    }
+
+    /** I cervelli che rispondono insieme: online, con la chiave inserita. */
+    private List<Model.Brain> parallelBrains() {
+        List<Model.Brain> out = new ArrayList<>();
+        for (Model.Brain b : store.brains()) {
+            if (b.isLocal() || b.url == null || b.url.trim().isEmpty()) continue;
+            if (b.key == null || b.key.trim().isEmpty()) continue;
+            if (out.size() < 4) out.add(b);
+        }
+        return out;
+    }
+
+    private void startParallel(String text, List<Model.Brain> team) {
+        Model.Agent ag = currentAgent();
+        Model.Entry u = new Model.Entry("", "user", text);
+        chat.add(u);
+        addBubble(u);
+        final List<Model.Msg> msgs = Model.buildMessages(systemFor(ag, false), chat, 20);
+        pendingQ = text;
+        pendingReplies.clear();
+        setBusy(true);
+
+        final List<OpenAiClient.Cancel> subs = new ArrayList<>();
+        final OpenAiClient.Cancel master = new OpenAiClient.Cancel();
+        cancel = master;
+        final AtomicInteger left = new AtomicInteger(team.size());
+        final List<String> errors = new ArrayList<>();
+        for (final Model.Brain b : team) {
+            final Model.Entry e = new Model.Entry(ag.name + " · " + b.name, "assistant", "");
+            chat.add(e);
+            pendingReplies.add(e);
+            final TextView v = addBubble(e);
+            final OpenAiClient.Cancel c = new OpenAiClient.Cancel();
+            subs.add(c);
+            new Thread(() -> {
+                String err = null;
+                try {
+                    OpenAiClient.chat(b, msgs, d -> ui.post(() -> {
+                        e.text = e.text + d;
+                        v.setText(shown(e));
+                        scrollDown();
+                    }), c);
+                } catch (OpenAiClient.ChatException ex) {
+                    err = ex.getMessage();
+                } catch (RuntimeException ex) {
+                    err = "Errore inatteso: " + ex;
+                }
+                final String fErr = err;
+                ui.post(() -> {
+                    if (fErr != null) errors.add(b.name + ": " + fErr);
+                    if (e.text.isEmpty()) {
+                        chat.remove(e);
+                        pendingReplies.remove(e);
+                        if (v.getParent() instanceof View) list.removeView((View) v.getParent());
+                    }
+                    if (left.decrementAndGet() == 0) {
+                        for (String m : errors) addNotice(m);
+                        setBusy(false);
+                        store.saveChat(modeId, chat);
+                        logProject();
+                    }
+                });
+            }).start();
+        }
+        master.setOnCancel(() -> {
+            for (OpenAiClient.Cancel c : subs) c.cancel();
+        });
+        scrollDown();
+    }
+
+    /** Scrive nel registro del progetto cosa è stato chiesto e risposto, e (se acceso) lo salva su GitHub. */
+    private void logProject() {
+        if (pendingQ.isEmpty()) return;
+        final String q = pendingQ;
+        final List<String[]> rows = new ArrayList<>();
+        for (Model.Entry e : pendingReplies) {
+            if (e.text != null && !e.text.isEmpty()) rows.add(new String[]{e.label, e.text});
+        }
+        pendingQ = "";
+        pendingReplies.clear();
+        if (rows.isEmpty()) return;
+        final String when = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.ITALY).format(new java.util.Date());
+        projectWork.execute(() -> {
+            String doc = store.project();
+            for (String[] r : rows) doc = Project.appendLog(doc, Project.logLine(when, r[0], q, Fmt.plain(r[1])));
+            store.setProject(doc);
+            String token = store.ghToken();
+            if (!store.ghAuto() || token.isEmpty()) return;
+            try {
+                String res = new GitHubSync().sync(store.ghRepo(), store.ghPath(), token, store.projectBase(), doc, true);
+                store.setProject(res);
+                store.setProjectBase(res);
+            } catch (OpenAiClient.ChatException e) {
+                final String m = "GitHub: " + e.getMessage();
+                ui.post(() -> addInfo(m));
+            } catch (RuntimeException e) {
+                ui.post(() -> addInfo("GitHub: errore inatteso."));
+            }
+        });
     }
 
     private void finishPipeline(Pipeline.Result res, String err, boolean stopped) {

@@ -59,6 +59,58 @@ public final class Store {
         sp.edit().putBoolean("auto", on).apply();
     }
 
+    // ---- progetto condiviso e GitHub ----
+    public String project() {
+        return sp.getString("proj", "");
+    }
+
+    public void setProject(String t) {
+        sp.edit().putString("proj", t == null ? "" : t).apply();
+    }
+
+    /** Ultima versione della scheda già allineata con GitHub. */
+    public String projectBase() {
+        return sp.getString("proj_base", "");
+    }
+
+    public void setProjectBase(String t) {
+        sp.edit().putString("proj_base", t == null ? "" : t).apply();
+    }
+
+    public String ghToken() {
+        return sp.getString("gh_token", "");
+    }
+
+    public String ghRepo() {
+        return sp.getString("gh_repo", "kabbalah1974-dot/Leonardo-2-");
+    }
+
+    public String ghPath() {
+        return sp.getString("gh_path", "progetto/SALVATORE.md");
+    }
+
+    public void setGh(String token, String repo, String path) {
+        sp.edit().putString("gh_token", token).putString("gh_repo", repo).putString("gh_path", path).apply();
+    }
+
+    /** Salvare da solo su GitHub dopo ogni risposta. */
+    public boolean ghAuto() {
+        return sp.getBoolean("gh_auto", true);
+    }
+
+    public void setGhAuto(boolean on) {
+        sp.edit().putBoolean("gh_auto", on).apply();
+    }
+
+    /** Far rispondere insieme tutti i cervelli online che hanno una chiave. */
+    public boolean parallel() {
+        return sp.getBoolean("parallel", false);
+    }
+
+    public void setParallel(boolean on) {
+        sp.edit().putBoolean("parallel", on).apply();
+    }
+
     // ---- agenti ----
     public List<Model.Agent> agents() {
         List<Model.Agent> out = new ArrayList<>();

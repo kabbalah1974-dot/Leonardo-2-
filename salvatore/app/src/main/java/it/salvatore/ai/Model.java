@@ -128,10 +128,21 @@ public final class Model {
         int start = Math.max(0, chat.size() - max);
         // Il primo messaggio dopo le istruzioni dev'essere dell'utente.
         while (start < chat.size() && !"user".equals(chat.get(start).role)) start++;
+        String lastLabel = null;
         for (int i = start; i < chat.size(); i++) {
             Entry e = chat.get(i);
             if (e.text == null || e.text.isEmpty()) continue;
-            out.add(new Msg(e.role, e.text));
+            // Più risposte di fila (cervelli in parallelo): si uniscono in una, col nome di chi ha risposto.
+            if ("assistant".equals(e.role) && !out.isEmpty() && "assistant".equals(out.get(out.size() - 1).role)) {
+                Msg last = out.remove(out.size() - 1);
+                String first = lastLabel != null && !lastLabel.isEmpty() && !last.content.startsWith("[")
+                        ? "[" + lastLabel + "] " + last.content : last.content;
+                String second = e.label != null && !e.label.isEmpty() ? "[" + e.label + "] " + e.text : e.text;
+                out.add(new Msg("assistant", first + "\n\n" + second));
+            } else {
+                out.add(new Msg(e.role, e.text));
+            }
+            lastLabel = e.label;
         }
         return out;
     }
