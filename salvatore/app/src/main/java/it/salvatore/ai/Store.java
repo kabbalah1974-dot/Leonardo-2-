@@ -50,6 +50,15 @@ public final class Store {
         sp.edit().putString("brain", id).apply();
     }
 
+    /** Passare da solo dal cervello online a quello dentro il tablet (e viceversa). Acceso di partenza. */
+    public boolean autoSwitch() {
+        return sp.getBoolean("auto", true);
+    }
+
+    public void setAutoSwitch(boolean on) {
+        sp.edit().putBoolean("auto", on).apply();
+    }
+
     // ---- agenti ----
     public List<Model.Agent> agents() {
         List<Model.Agent> out = new ArrayList<>();

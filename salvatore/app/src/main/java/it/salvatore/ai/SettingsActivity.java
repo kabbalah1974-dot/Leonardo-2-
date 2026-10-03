@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.os.Looper;
 import android.text.InputType;
 import android.view.View;
@@ -40,6 +42,8 @@ public class SettingsActivity extends Activity {
     private TextView localStatus;
     private Button btnDownload, btnPick, btnDelete;
     private volatile boolean busyModel = false;
+    private boolean filling = false;
+    private boolean dName, dUrl, dKey, dModel;
     private OpenAiClient.Cancel modelCancel;
     private static final int REQ_PICK = 77;
 
@@ -172,6 +176,10 @@ public class SettingsActivity extends Activity {
         bKey.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         bModel = th.field("Nome del modello", false);
         bModel.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        watch(bName, 0);
+        watch(bUrl, 1);
+        watch(bKey, 2);
+        watch(bModel, 3);
         labeled(bc, "Nome (lo scegli tu)", bName);
 
         remoteBox = new LinearLayout(this);
@@ -207,6 +215,20 @@ public class SettingsActivity extends Activity {
         localBox.addView(btnPick);
         localBox.addView(btnDelete);
         bc.addView(localBox);
+
+        CheckBox auto = new CheckBox(this);
+        auto.setText("Scegli da solo: online quando c'è internet, dentro il tablet quando manca (o quando l'online non risponde)");
+        auto.setTextColor(th.text);
+        auto.setChecked(store.autoSwitch());
+        auto.setOnCheckedChangeListener((b, on) -> store.setAutoSwitch(on));
+        LinearLayout.LayoutParams al = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        al.topMargin = th.dp(16);
+        bc.addView(auto, al);
+        TextView ah2 = th.label("Per far funzionare il passaggio servono due cervelli: uno online (con la sua chiave) e uno dentro il tablet "
+                + "con il modello già scaricato.", 13, th.sub, false);
+        ah2.setPadding(th.dp(32), 0, 0, 0);
+        bc.addView(ah2);
 
         Button test = th.button("Prova il collegamento", v -> onTest());
         LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(
@@ -268,7 +290,7 @@ public class SettingsActivity extends Activity {
         rl.topMargin = th.dp(12);
         ac.addView(reset, rl);
 
-        TextView about = th.label("Salvatore · versione base 1.0\nLe chat, i cervelli e le chiavi restano solo su questo tablet.",
+        TextView about = th.label("Salvatore · versione 1.2\nLe chat, i cervelli e le chiavi restano solo su questo tablet.",
                 13, th.sub, false);
         about.setPadding(th.dp(4), th.dp(4), 0, 0);
         root.addView(about);
@@ -287,11 +309,34 @@ public class SettingsActivity extends Activity {
     }
 
     private void fillBrain() {
+        filling = true;
         bName.setText(shownBrain.name);
         bUrl.setText(shownBrain.url);
         bKey.setText(shownBrain.key);
         bModel.setText(shownBrain.model);
+        filling = false;
+        dName = dUrl = dKey = dModel = false;
         updateBrainLayout();
+    }
+
+    /** Segna un campo come "toccato dall'utente": solo quelli si salvano, così nulla si sovrascrive per sbaglio. */
+    private void watch(EditText e, final int which) {
+        e.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int a, int b, int c) {}
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (filling) return;
+                if (which == 0) dName = true;
+                else if (which == 1) dUrl = true;
+                else if (which == 2) dKey = true;
+                else dModel = true;
+            }
+        });
     }
 
     /** Mostra solo i campi che servono: indirizzo e chiave per i cervelli online, modello per quello nel tablet. */
@@ -304,12 +349,13 @@ public class SettingsActivity extends Activity {
 
     private void commitBrain() {
         if (shownBrain == null) return;
-        shownBrain.name = bName.getText().toString().trim();
+        if (dName) shownBrain.name = bName.getText().toString().trim();
         if (!shownBrain.isLocal()) {
-            shownBrain.url = bUrl.getText().toString().trim();
-            shownBrain.key = bKey.getText().toString().trim();
+            if (dUrl) shownBrain.url = bUrl.getText().toString().trim();
+            if (dKey) shownBrain.key = bKey.getText().toString().trim();
         }
-        shownBrain.model = bModel.getText().toString().trim();
+        if (dModel) shownBrain.model = bModel.getText().toString().trim();
+        dName = dUrl = dKey = dModel = false;
         int i = brains.indexOf(shownBrain);
         if (i >= 0 && i < brainNames.size()) {
             brainNames.set(i, brainLabel(shownBrain));

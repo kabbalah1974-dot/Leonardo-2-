@@ -185,7 +185,8 @@ public class MainActivity extends Activity {
             brainInfo.setText("Cervello: non ancora collegato (apri Impostazioni)");
         } else {
             String m = b.model.isEmpty() ? "" : " · " + b.model;
-            brainInfo.setText("Cervello: " + b.name + m);
+            String a = store.autoSwitch() ? " · automatico" : "";
+            brainInfo.setText("Cervello: " + b.name + m + a);
         }
     }
 
@@ -268,6 +269,14 @@ public class MainActivity extends Activity {
         scrollDown();
     }
 
+    /** Un avviso neutro (non è un errore), ad esempio quando si passa al cervello dentro il tablet. */
+    private void addInfo(String s) {
+        TextView t = th.label(s, 14, th.sub, false);
+        t.setPadding(th.dp(8), th.dp(6), th.dp(8), th.dp(6));
+        list.addView(t);
+        scrollDown();
+    }
+
     private void scrollDown() {
         scroll.post(() -> scroll.scrollTo(0, list.getBottom()));
     }
@@ -312,11 +321,12 @@ public class MainActivity extends Activity {
         }
         String text = input.getText().toString().trim();
         if (text.isEmpty()) return;
-        Model.Brain brain = store.activeBrain();
+        final AutoBrain.Choice choice = AutoBrain.choose(store.brains(), store.activeBrain(), store.autoSwitch(),
+                Net.isOnline(this), b -> ModelStore.isReady(this, b.model));
         input.setText("");
         if (chat.isEmpty()) list.removeAllViews(); // toglie il testo di benvenuto
-        if (PIPELINE.equals(modeId)) startPipeline(text, brain);
-        else startChat(text, brain);
+        if (PIPELINE.equals(modeId)) startPipeline(text, choice);
+        else startChat(text, choice);
     }
 
     private Model.Agent currentAgent() {
@@ -324,12 +334,13 @@ public class MainActivity extends Activity {
         return agents.isEmpty() ? Presets.agentSalvatore() : agents.get(0);
     }
 
-    private void startChat(String text, final Model.Brain brain) {
+    private void startChat(String text, final AutoBrain.Choice choice) {
         Model.Agent ag = currentAgent();
         Model.Entry u = new Model.Entry("", "user", text);
         chat.add(u);
         addBubble(u);
-        final Model.Entry reply = new Model.Entry(ag.name, "assistant", "");
+        final String who = choice.primary.isLocal() ? ag.name + " · nel tablet" : ag.name;
+        final Model.Entry reply = new Model.Entry(who, "assistant", "");
         chat.add(reply);
         liveEntry = reply;
         liveView = addBubble(reply);
@@ -342,7 +353,8 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             String err = null;
             try {
-                OpenAiClient.chat(brain, msgs, d -> ui.post(() -> appendLive(d)), c);
+                new SmartBrain(choice.primary, choice.fallback, c, n -> ui.post(() -> addInfo(n)))
+                        .chat(msgs, d -> ui.post(() -> appendLive(d)));
             } catch (OpenAiClient.ChatException e) {
                 err = e.getMessage();
             } catch (RuntimeException e) {
@@ -353,7 +365,7 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    private void startPipeline(String text, final Model.Brain brain) {
+    private void startPipeline(String text, final AutoBrain.Choice choice) {
         Model.Entry u = new Model.Entry("Tu", "user", text);
         chat.add(u);
         addBubble(u);
@@ -393,7 +405,8 @@ public class MainActivity extends Activity {
                 }
             };
             try {
-                res = Pipeline.run(new OpenAiClient(brain, c), ing, rev, text, ev);
+                res = Pipeline.run(new SmartBrain(choice.primary, choice.fallback, c, n -> ui.post(() -> addInfo(n))),
+                        ing, rev, text, ev);
             } catch (OpenAiClient.ChatException e) {
                 err = e.getMessage();
             } catch (RuntimeException e) {

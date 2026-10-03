@@ -39,6 +39,7 @@ public class LogicTests {
         fmtTests();
         thinkTests();
         localTests();
+        autoTests();
         System.out.println("Prove riuscite: " + ok + ", fallite: " + bad);
         if (bad > 0) System.exit(1);
     }
@@ -392,5 +393,84 @@ public class LogicTests {
         c2.cancel();
         c2.setOnCancel(() -> hits[0]++);
         eq(hits[0], 2, "ferma: azione registrata dopo viene eseguita subito");
+    }
+    // ---------- scelta automatica del cervello ----------
+    static void autoTests() throws Exception {
+        Model.Brain local = new Model.Brain("L", "Tablet", "local:", "", "f.litertlm");
+        Model.Brain gem = new Model.Brain("G", "Gemini", "https://x.example/v1", "chiave", "m");
+        Model.Brain lan = new Model.Brain("S", "Server di casa", "http://127.0.0.1:8080/v1", "", "m");
+        List<Model.Brain> all = new ArrayList<>();
+        all.add(lan);
+        all.add(local);
+        all.add(gem);
+        AutoBrain.Ready yes = b -> true;
+        AutoBrain.Ready no = b -> false;
+
+        AutoBrain.Choice c = AutoBrain.choose(all, gem, true, true, yes);
+        eq(c.primary.id, "G", "auto: online usa l'online");
+        eq(c.fallback == null ? null : c.fallback.id, "L", "auto: online ha il tablet di riserva");
+
+        c = AutoBrain.choose(all, gem, true, false, yes);
+        eq(c.primary.id, "L", "auto: offline passa al tablet");
+        check(c.fallback == null, "auto: offline senza riserva");
+
+        c = AutoBrain.choose(all, local, true, true, yes);
+        eq(c.primary.id, "G", "auto: scelto il tablet ma c'è internet, torna all'online");
+        eq(c.fallback.id, "L", "auto: riserva dopo il ritorno online");
+
+        c = AutoBrain.choose(all, gem, true, false, no);
+        eq(c.primary.id, "G", "auto: offline ma modello non scaricato, resta com'è");
+
+        c = AutoBrain.choose(all, gem, true, true, no);
+        check(c.fallback == null, "auto: modello non scaricato, nessuna riserva");
+
+        c = AutoBrain.choose(all, gem, false, false, yes);
+        eq(c.primary.id, "G", "auto spento: non cambia mai");
+        check(c.fallback == null, "auto spento: nessuna riserva");
+
+        c = AutoBrain.choose(all, lan, true, true, yes);
+        eq(c.primary.id, "G", "auto: il server sul tablet stesso non conta come online");
+
+        // SmartBrain: l'online dà errore 503 -> si passa al tablet
+        HttpServer srv = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        srv.createContext("/down/v1/chat/completions", ex -> {
+            readBody(ex.getRequestBody());
+            byte[] out = "{\"error\":{\"message\":\"high demand\"}}".getBytes(StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(503, out.length);
+            try (OutputStream os = ex.getResponseBody()) {
+                os.write(out);
+            }
+        });
+        srv.start();
+        Model.Brain down = new Model.Brain("D", "Giù", "http://127.0.0.1:" + srv.getAddress().getPort() + "/down/v1", "k", "m");
+        List<Model.Msg> msgs = new ArrayList<>();
+        msgs.add(new Model.Msg("user", "ciao"));
+        final int[] localCalls = {0};
+        OpenAiClient.local = (b, m, sink, cc) -> {
+            localCalls[0]++;
+            if (sink != null) sink.onDelta("dal tablet");
+            return "dal tablet";
+        };
+        final List<String> notes = new ArrayList<>();
+        SmartBrain sb = new SmartBrain(down, local, new OpenAiClient.Cancel(), notes::add);
+        StringBuilder got = new StringBuilder();
+        eq(sb.chat(msgs, got::append), "dal tablet", "smart: passa al tablet se l'online dà errore");
+        eq(got.toString(), "dal tablet", "smart: pezzi dal tablet");
+        eq(notes.size(), 1, "smart: un avviso");
+        check(notes.get(0).contains("Giù") && notes.get(0).contains("503"), "smart: avviso chiaro: " + notes);
+        sb.chat(msgs, null);
+        eq(notes.size(), 1, "smart: dopo il passaggio non ripete l'avviso");
+        eq(localCalls[0], 2, "smart: poi usa direttamente il tablet");
+
+        // senza riserva l'errore resta
+        SmartBrain sb2 = new SmartBrain(down, null, new OpenAiClient.Cancel(), notes::add);
+        try {
+            sb2.chat(msgs, null);
+            check(false, "smart: senza riserva doveva dare errore");
+        } catch (OpenAiClient.ChatException e) {
+            check(e.getMessage().contains("problema"), "smart: errore 503 chiaro");
+        }
+        OpenAiClient.local = null;
+        srv.stop(0);
     }
 }
