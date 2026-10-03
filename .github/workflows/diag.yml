@@ -1,0 +1,56 @@
+name: Diagnostica
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diag.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Leggi il pacchetto del motore
+        run: |
+          mkdir -p d && cd d
+          B=https://dl.google.com/android/maven2/com/google/ai/edge/litertlm/litertlm-android
+          curl -sSL $B/maven-metadata.xml -o meta.xml
+          V=$(grep -oP '(?<=<release>)[^<]+' meta.xml || true)
+          [ -z "$V" ] && V=$(grep -oP '(?<=<version>)[^<]+' meta.xml | tail -1)
+          {
+            echo "== versione litertlm: $V"
+            echo "== tutte le versioni:"; grep -oP '(?<=<version>)[^<]+' meta.xml | tr '\n' ' '; echo
+            curl -sSL $B/$V/litertlm-android-$V.pom -o lib.pom; echo "== POM"; cat lib.pom
+            echo "== Kotlin plugin stabili recenti:"
+            curl -sSL https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugin/maven-metadata.xml | grep -oP '(?<=<version>)[0-9]+\.[0-9]+\.[0-9]+(?=</version>)' | tail -8 | tr '\n' ' '; echo
+          } > ../diag.txt 2>&1
+          curl -sSL $B/$V/litertlm-android-$V.aar -o lib.aar
+          unzip -o -q lib.aar -d aar
+          ls -la aar aar/jni 2>/dev/null >> ../diag.txt
+          cd aar
+          {
+            echo "== classi"
+            unzip -l classes.jar | awk '{print $4}' | grep class | grep -v '\$' | head -150
+            for c in Engine EngineConfig Backend Backend\$CPU Conversation ConversationConfig MessageCallback Message Contents Content SamplerConfig ExperimentalApi; do
+              echo; echo "=== $c"
+              javap -p -cp classes.jar "com.google.ai.edge.litertlm.$c" 2>&1 | head -60
+            done
+          } >> ../../diag.txt 2>&1
+      - name: Pubblica il risultato
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view diag > /dev/null 2>&1; then
+            gh release upload diag diag.txt --clobber
+          else
+            gh release create diag diag.txt --title "diagnostica" --notes "file di servizio" --target "${{ github.sha }}"
+          fi
