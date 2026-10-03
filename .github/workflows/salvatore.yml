@@ -1,0 +1,60 @@
+name: Costruisci Salvatore
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'salvatore/**'
+      - '.github/workflows/salvatore.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: costruisci-salvatore
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: salvatore
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Prova la logica
+        run: |
+          mkdir -p prova
+          S=app/src/main/java/it/salvatore/ai
+          javac -encoding UTF-8 -d prova $S/Json.java $S/Model.java $S/Pipeline.java $S/OpenAiClient.java test/it/salvatore/ai/LogicTests.java
+          java -Dfile.encoding=UTF-8 -cp prova it.salvatore.ai.LogicTests
+
+      - name: Costruisci l'app
+        run: gradle assembleRelease --no-daemon --stacktrace -PverCode=${{ github.run_number }}
+
+      - name: Prepara il file da installare
+        run: cp app/build/outputs/apk/release/app-release.apk salvatore.apk
+
+      - name: Pubblica l'app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SUM=$(sha256sum salvatore.apk | cut -d' ' -f1)
+          NOTES="Versione costruita automaticamente (numero ${{ github.run_number }}). SHA-256 del file: $SUM"
+          if gh release view salvatore > /dev/null 2>&1; then
+            gh release upload salvatore salvatore.apk --clobber
+            gh release edit salvatore --notes "$NOTES"
+          else
+            gh release create salvatore salvatore.apk --title "Salvatore" --notes "$NOTES" --target "${{ github.sha }}"
+          fi

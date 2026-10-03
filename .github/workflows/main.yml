@@ -3,6 +3,9 @@ name: Costruisci APK
 on:
   push:
     branches: [main, master]
+    paths-ignore:
+      - 'salvatore/**'
+      - '.github/workflows/salvatore.yml'
   workflow_dispatch:
 
 concurrency:

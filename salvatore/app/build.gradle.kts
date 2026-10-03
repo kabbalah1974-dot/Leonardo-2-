@@ -1,0 +1,45 @@
+plugins {
+    id("com.android.application")
+}
+
+android {
+    namespace = "it.salvatore.ai"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "it.salvatore.ai"
+        minSdk = 29
+        targetSdk = 34
+        // Cresce a ogni costruzione automatica, così Android accetta sempre l'aggiornamento.
+        versionCode = providers.gradleProperty("verCode").orNull?.toIntOrNull() ?: 1
+        versionName = "1.0"
+    }
+
+    // Stessa firma a ogni costruzione: senza, Android rifiuta gli aggiornamenti ("firma in conflitto").
+    signingConfigs {
+        create("salvatore") {
+            storeFile = file("salvatore.keystore")
+            storePassword = "salvatore"
+            keyAlias = "salvatore"
+            keyPassword = "salvatore"
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("salvatore")
+            isMinifyEnabled = false
+            isDebuggable = false
+        }
+    }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
