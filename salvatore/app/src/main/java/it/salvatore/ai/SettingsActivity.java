@@ -208,7 +208,7 @@ public class SettingsActivity extends Activity {
                 + "Durante lo scaricamento tieni lo schermo acceso.", 13, th.sub, false);
         lh.setPadding(0, th.dp(4), 0, th.dp(4));
         localBox.addView(lh);
-        btnDownload = th.button("Scarica il modello consigliato (circa " + Presets.LOCAL_MB + " MB)", v -> onDownload());
+        btnDownload = th.button("Scarica o scegli un modello…", v -> onChooseModel());
         btnPick = th.button("Scegli un file dal tablet o da Drive", v -> onPick());
         btnDelete = th.button("Elimina il modello dal tablet", v -> onDeleteModel());
         localBox.addView(btnDownload);
@@ -290,7 +290,7 @@ public class SettingsActivity extends Activity {
         rl.topMargin = th.dp(12);
         ac.addView(reset, rl);
 
-        TextView about = th.label("Salvatore · versione 1.2\nLe chat, i cervelli e le chiavi restano solo su questo tablet.",
+        TextView about = th.label("Salvatore · versione 1.3\nLe chat, i cervelli e le chiavi restano solo su questo tablet.",
                 13, th.sub, false);
         about.setPadding(th.dp(4), th.dp(4), 0, 0);
         root.addView(about);
@@ -452,17 +452,40 @@ public class SettingsActivity extends Activity {
         }
         if (extra != null) s = s + "\n" + extra;
         localStatus.setText(s);
-        btnDownload.setText(busyModel ? "Annulla" : "Scarica il modello consigliato (circa " + Presets.LOCAL_MB + " MB)");
+        btnDownload.setText(busyModel ? "Annulla" : "Scarica o scegli un modello…");
         btnPick.setEnabled(!busyModel);
         btnDelete.setEnabled(!busyModel);
     }
 
-    private void onDownload() {
+    private void onChooseModel() {
         if (busyModel) {
             if (modelCancel != null) modelCancel.cancel();
             return;
         }
-        bModel.setText(Presets.LOCAL_FILE);
+        final String[] items = new String[Presets.LOCAL_MODELS.length];
+        for (int i = 0; i < items.length; i++) {
+            String[] m = Presets.LOCAL_MODELS[i];
+            boolean have = ModelStore.isReady(this, m[1]);
+            items[i] = m[0] + " (" + m[3] + " MB)" + (have ? " ✓ già nel tablet" : "");
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Quale modello?")
+                .setItems(items, (d, which) -> {
+                    String[] m = Presets.LOCAL_MODELS[which];
+                    if (ModelStore.isReady(this, m[1])) {
+                        bModel.setText(m[1]);
+                        commitBrain();
+                        refreshLocalStatus("Modello scelto.");
+                    } else {
+                        onDownload(m[1], m[2]);
+                    }
+                })
+                .setNegativeButton("Annulla", null)
+                .show();
+    }
+
+    private void onDownload(final String file, final String url) {
+        bModel.setText(file);
         commitBrain();
         busyModel = true;
         final OpenAiClient.Cancel c = new OpenAiClient.Cancel();
@@ -471,7 +494,7 @@ public class SettingsActivity extends Activity {
         new Thread(() -> {
             String result;
             try {
-                ModelStore.download(getApplicationContext(), Presets.LOCAL_URL, Presets.LOCAL_FILE, (done, total) -> {
+                ModelStore.download(getApplicationContext(), url, file, (done, total) -> {
                     final String t = total > 0
                             ? "Scaricamento: " + ModelStore.mb(done) + " di " + ModelStore.mb(total) + " (" + (done * 100 / total) + "%)"
                             : "Scaricamento: " + ModelStore.mb(done);

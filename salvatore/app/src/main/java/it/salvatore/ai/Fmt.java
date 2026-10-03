@@ -9,6 +9,30 @@ public final class Fmt {
 
     private static final Pattern ITALIC = Pattern.compile("(?<![*\\w])\\*(?!\\s)([^*\\n]+?)(?<!\\s)\\*(?![*\\w])");
 
+    /**
+     * Il motore a volte lascia passare i "pezzi di byte" di emoji e simboli (Ġ, Ċ, ǒ, Ł...), che sono lettere
+     * dell'alfabeto latino esteso mai usate in italiano. Ġ = spazio, Ċ = a capo; gli altri si tolgono.
+     */
+    public static String fixBytes(String s) {
+        if (s == null || s.isEmpty()) return "";
+        StringBuilder b = null;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c >= '\u0100' && c <= '\u024F') {
+                if (b == null) {
+                    b = new StringBuilder(s.length());
+                    b.append(s, 0, i);
+                }
+                if (c == '\u0120') b.append(' ');
+                else if (c == '\u010A') b.append('\n');
+                else if (c == '\u0109') b.append('\t');
+            } else if (b != null) {
+                b.append(c);
+            }
+        }
+        return b == null ? s : b.toString();
+    }
+
     public static String plain(String s) {
         if (s == null || s.isEmpty()) return "";
         java.util.List<String> out = new java.util.ArrayList<>();

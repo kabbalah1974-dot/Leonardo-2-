@@ -37,6 +37,7 @@ public class LogicTests {
         pipelineTests();
         clientTests();
         fmtTests();
+        bytesTests();
         thinkTests();
         localTests();
         autoTests();
@@ -472,5 +473,11 @@ public class LogicTests {
         }
         OpenAiClient.local = null;
         srv.stop(0);
+    }
+    static void bytesTests() {
+        eq(Fmt.fixBytes("Ciao!\u0120\u01D2\u0141\u012C" + "Se hai"), "Ciao! Se hai", "byte: pezzi di emoji tolti");
+        eq(Fmt.fixBytes("a\u0120b\u010Ac"), "a b\nc", "byte: spazio e a capo");
+        eq(Fmt.fixBytes("È già così, perché sì: àèìòù"), "È già così, perché sì: àèìòù", "byte: l'italiano non si tocca");
+        eq(Fmt.fixBytes(""), "", "byte: vuoto");
     }
 }

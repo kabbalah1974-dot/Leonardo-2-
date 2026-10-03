@@ -26,6 +26,13 @@ public final class Presets {
             "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm";
     public static final int LOCAL_MB = 586;
 
+    /** Modelli per il cervello dentro il tablet: {etichetta, file, indirizzo, MB}. Tutti liberi, senza account. */
+    public static final String[][] LOCAL_MODELS = {
+        {"Leggero e veloce: Qwen3 0.6B", LOCAL_FILE, LOCAL_URL, "586"},
+        {"Più capace ma lento: Gemma 4 E2B", "gemma-4-E2B-it.litertlm",
+         "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm", "2583"},
+    };
+
     public static final String ID_SALVATORE = "salvatore";
     public static final String ID_INGEGNERE = "ingegnere";
     public static final String ID_REVISORE = "revisore";

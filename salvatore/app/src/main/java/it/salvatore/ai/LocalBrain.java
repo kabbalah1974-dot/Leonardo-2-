@@ -10,6 +10,8 @@ import com.google.ai.edge.litertlm.Engine;
 import com.google.ai.edge.litertlm.EngineConfig;
 import com.google.ai.edge.litertlm.Message;
 import com.google.ai.edge.litertlm.MessageCallback;
+import com.google.ai.edge.litertlm.SamplerConfig;
+import com.google.ai.edge.litertlm.ToolProvider;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -99,6 +101,8 @@ public final class LocalBrain implements OpenAiClient.LocalEngine {
             while (!hist.isEmpty() && !"user".equals(hist.get(0).role)) chars -= hist.remove(0).content.length();
         }
         if (system.trim().isEmpty()) system = "Sei un assistente. Rispondi in italiano.";
+        // I modelli piccoli sono più veloci e più chiari se rispondono corto e senza simboli.
+        system = system.trim() + " Rispondi in modo breve. Non usare emoji.";
 
         synchronized (lock) {
             generating = true;
@@ -109,7 +113,9 @@ public final class LocalBrain implements OpenAiClient.LocalEngine {
                 for (Model.Msg m : hist) {
                     initial.add("user".equals(m.role) ? Message.Companion.user(m.content) : Message.Companion.model(m.content));
                 }
-                ConversationConfig cc = new ConversationConfig(Contents.Companion.of(system), initial);
+                // Un po' meno "fantasia" del normale: i modelli piccoli sbagliano meno parole.
+                ConversationConfig cc = new ConversationConfig(Contents.Companion.of(system), initial,
+                        new ArrayList<ToolProvider>(), new SamplerConfig(20, 0.9, 0.6, 0));
                 conv = e.createConversation(cc);
                 final Conversation fc = conv;
                 cancel.setOnCancel(() -> {
@@ -140,7 +146,7 @@ public final class LocalBrain implements OpenAiClient.LocalEngine {
                         } else {
                             raw.append(t);
                         }
-                        String vis = think.feed(piece);
+                        String vis = think.feed(Fmt.fixBytes(piece));
                         if (!vis.isEmpty()) {
                             out.append(vis);
                             if (fs != null) fs.onDelta(vis);

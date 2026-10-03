@@ -82,7 +82,7 @@ public class MainActivity extends Activity {
     public void onTrimMemory(int level) {
         super.onTrimMemory(level);
         // Con poca memoria libera il modello dentro il tablet: si ricarica da solo alla prossima risposta.
-        if (level >= TRIM_MEMORY_BACKGROUND && !busy) LocalBrain.release();
+        if (level >= TRIM_MEMORY_MODERATE && !busy) LocalBrain.release();
     }
 
     /** Il testo come si vede a schermo: senza asterischi e simboli, tranne il codice dell'Ingegnere. */
