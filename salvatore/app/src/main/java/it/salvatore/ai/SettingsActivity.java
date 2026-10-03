@@ -276,6 +276,38 @@ public class SettingsActivity extends Activity {
         pph.setPadding(th.dp(32), 0, 0, th.dp(8));
         pc.addView(pph);
 
+        TextView sqh = th.label("Modalità Squadra: scegli il capo. Lui divide il lavoro, gli altri cervelli (online, con la chiave) lavorano insieme, "
+                + "e il capo ti dà una sola risposta. Conviene il cervello più capace.", 14, th.sub, false);
+        sqh.setPadding(0, th.dp(8), 0, th.dp(4));
+        pc.addView(sqh);
+        final List<Model.Brain> leaderOptions = new ArrayList<>();
+        final List<String> leaderNames = new ArrayList<>();
+        leaderOptions.add(null);
+        leaderNames.add("Il cervello in uso");
+        for (Model.Brain b : brains) {
+            if (b.isLocal()) continue;
+            leaderOptions.add(b);
+            leaderNames.add(brainLabel(b));
+        }
+        Spinner leaderSpinner = new Spinner(this);
+        ArrayAdapter<String> leaderAd = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, leaderNames);
+        leaderAd.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        leaderSpinner.setAdapter(leaderAd);
+        int sel = 0;
+        for (int i = 1; i < leaderOptions.size(); i++) if (leaderOptions.get(i).id.equals(store.leaderId())) sel = i;
+        leaderSpinner.setSelection(sel);
+        leaderSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                Model.Brain b = leaderOptions.get(pos);
+                store.setLeaderId(b == null ? "" : b.id);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> p) {}
+        });
+        pc.addView(leaderSpinner);
+
         pText = th.field("Scrivi qui l'obiettivo e le decisioni del progetto", true);
         pText.setMinLines(6);
         pText.setMaxLines(16);
@@ -358,7 +390,7 @@ public class SettingsActivity extends Activity {
         rl.topMargin = th.dp(12);
         ac.addView(reset, rl);
 
-        TextView about = th.label("Salvatore · versione 1.4\nLe chat, i cervelli e le chiavi restano solo su questo tablet.",
+        TextView about = th.label("Salvatore · versione 1.5\nLe chat, i cervelli e le chiavi restano solo su questo tablet.",
                 13, th.sub, false);
         about.setPadding(th.dp(4), th.dp(4), 0, 0);
         root.addView(about);

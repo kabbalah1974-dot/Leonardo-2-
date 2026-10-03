@@ -132,6 +132,7 @@ public final class Model {
         for (int i = start; i < chat.size(); i++) {
             Entry e = chat.get(i);
             if (e.text == null || e.text.isEmpty()) continue;
+            if (e.label != null && e.label.startsWith("⚙")) continue; // lavoro intermedio della squadra
             // Più risposte di fila (cervelli in parallelo): si uniscono in una, col nome di chi ha risposto.
             if ("assistant".equals(e.role) && !out.isEmpty() && "assistant".equals(out.get(out.size() - 1).role)) {
                 Msg last = out.remove(out.size() - 1);

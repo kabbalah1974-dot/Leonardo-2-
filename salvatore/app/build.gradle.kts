@@ -12,7 +12,7 @@ android {
         targetSdk = 34
         // Cresce a ogni costruzione automatica, così Android accetta sempre l'aggiornamento.
         versionCode = providers.gradleProperty("verCode").orNull?.toIntOrNull() ?: 1
-        versionName = "1.4"
+        versionName = "1.5"
         // Il motore del modello locale esiste per questi processori; il tablet usa arm64.
         ndk {
             abiFilters += listOf("arm64-v8a")

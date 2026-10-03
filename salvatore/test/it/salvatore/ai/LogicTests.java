@@ -40,6 +40,7 @@ public class LogicTests {
         bytesTests();
         modelsTests();
         projectTests();
+        teamTests();
         thinkTests();
         localTests();
         autoTests();
@@ -475,6 +476,74 @@ public class LogicTests {
         }
         OpenAiClient.local = null;
         srv.stop(0);
+    }
+    static void teamTests() throws Exception {
+        List<String> names = new ArrayList<>();
+        names.add("Groq");
+        names.add("Mistral");
+        names.add("Cohere");
+        String[] pl = Team.parsePlan("- **Groq**: scrivi il codice\nMistral: controlla gli errori\nbla bla senza due punti\nAltro: boh", names);
+        eq(pl[0], "scrivi il codice", "squadra: piano riga 1");
+        eq(pl[1], "controlla gli errori", "squadra: piano riga 2");
+        check(pl[2] == null, "squadra: chi non è nel piano resta fuori");
+
+        final List<String> leaderSeen = new ArrayList<>();
+        Pipeline.Llm leader = (m, sink) -> {
+            String u = m.get(m.size() - 1).content;
+            leaderSeen.add(u);
+            String out = m.get(0).content.startsWith("Sei il capo di una squadra di assistenti AI")
+                    ? "Groq: scrivi\nMistral: controlla" : "RISPOSTA FINALE";
+            if (sink != null) sink.onDelta(out);
+            return out;
+        };
+        List<Team.Worker> ws = new ArrayList<>();
+        ws.add(new Team.Worker("Groq", (m, sink) -> {
+            if (sink != null) sink.onDelta("codice");
+            return "codice";
+        }));
+        ws.add(new Team.Worker("Mistral", (m, sink) -> {
+            throw new OpenAiClient.ChatException("limite");
+        }));
+        final List<String> began = java.util.Collections.synchronizedList(new ArrayList<>());
+        Team.Events ev = new Team.Events() {
+            public void begin(String k, String l) {
+                began.add(k);
+            }
+
+            public void delta(String k, String t) {}
+
+            public void end(String k) {}
+
+            public boolean cancelled() {
+                return false;
+            }
+        };
+        Team.Result r = Team.run(leader, ws, "fai una cosa", "", ev);
+        eq(r.finalText, "RISPOSTA FINALE", "squadra: risposta finale del capo");
+        eq(r.answered, 1, "squadra: uno solo ha risposto");
+        check(began.contains("plan") && began.contains("w0") && began.contains("w1") && began.contains("final"), "squadra: tutti i riquadri " + began);
+        check(leaderSeen.get(1).contains("codice") && leaderSeen.get(1).contains("nessuna risposta"), "squadra: il capo vede anche chi è mancato");
+
+        // tutti falliscono
+        List<Team.Worker> bad = new ArrayList<>();
+        bad.add(new Team.Worker("Groq", (m, sink) -> {
+            throw new OpenAiClient.ChatException("no");
+        }));
+        try {
+            Team.run(leader, bad, "x", "", ev);
+            check(false, "squadra: tutti falliti doveva dare errore");
+        } catch (OpenAiClient.ChatException e) {
+            check(e.getMessage().contains("Nessun collaboratore"), "squadra: errore chiaro");
+        }
+
+        // le bolle di lavoro non finiscono nei messaggi
+        List<Model.Entry> ch = new ArrayList<>();
+        ch.add(new Model.Entry("Tu", "user", "q"));
+        ch.add(new Model.Entry("⚙ Piano del capo", "assistant", "piano"));
+        ch.add(new Model.Entry("Squadra · risposta", "assistant", "fine"));
+        List<Model.Msg> ms = Model.buildMessages("", ch, 20);
+        eq(ms.size(), 2, "squadra: salta il lavoro intermedio");
+        eq(ms.get(1).content, "fine", "squadra: resta la risposta finale");
     }
     static void projectTests() throws Exception {
         eq(Project.merge("A\n", "A\n", "A\nR\n"), "A\nR\n", "progetto: tablet fermo, vale GitHub");

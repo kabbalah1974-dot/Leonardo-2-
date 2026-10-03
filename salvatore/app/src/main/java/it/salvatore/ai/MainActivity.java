@@ -34,6 +34,7 @@ import java.util.List;
 public class MainActivity extends Activity {
 
     private static final String PIPELINE = "pipeline";
+    private static final String SQUAD = "squadra";
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private Store store;
@@ -172,6 +173,8 @@ public class MainActivity extends Activity {
         }
         modeIds.add(PIPELINE);
         modeNames.add("Ingegnere + Revisore (fino a 3 giri)");
+        modeIds.add(SQUAD);
+        modeNames.add("Squadra (un capo coordina gli altri)");
         modeAdapter.notifyDataSetChanged();
 
         String wanted = store.mode();
@@ -219,7 +222,10 @@ public class MainActivity extends Activity {
     }
 
     private View hint() {
-        String s = PIPELINE.equals(modeId)
+        String s = SQUAD.equals(modeId)
+                ? "Qui lavora una squadra.\n\nScrivi un compito: il capo lo divide, gli altri cervelli lavorano insieme sulle loro parti "
+                  + "e il capo ti dà una sola risposta. Servono almeno 2 cervelli online con la chiave (Impostazioni)."
+                : PIPELINE.equals(modeId)
                 ? "Qui lavorano in due.\n\nScrivi cosa vuoi programmare: l'Ingegnere scrive il codice, il Revisore lo controlla "
                   + "e, se serve, lo rimanda indietro per le correzioni (fino a 3 giri)."
                 : "Ciao, sono Salvatore.\n\nScrivi qui sotto per parlare con me.\n\nPer rispondere ho bisogno di un cervello collegato: "
@@ -331,6 +337,10 @@ public class MainActivity extends Activity {
                 Net.isOnline(this), b -> ModelStore.isReady(this, b.model));
         input.setText("");
         if (chat.isEmpty()) list.removeAllViews(); // toglie il testo di benvenuto
+        if (SQUAD.equals(modeId)) {
+            startSquad(text);
+            return;
+        }
         if (PIPELINE.equals(modeId)) {
             startPipeline(text, choice);
             return;
@@ -542,6 +552,107 @@ public class MainActivity extends Activity {
             for (OpenAiClient.Cancel c : subs) c.cancel();
         });
         scrollDown();
+    }
+
+    private void startSquad(final String text) {
+        List<Model.Brain> all = parallelBrains();
+        String lid = store.leaderId();
+        Model.Brain lead = null;
+        for (Model.Brain b : all) if (b.id.equals(lid)) lead = b;
+        if (lead == null) {
+            Model.Brain act = store.activeBrain();
+            for (Model.Brain b : all) if (b.id.equals(act.id)) lead = b;
+        }
+        if (lead == null && !all.isEmpty()) lead = all.get(0);
+        final List<Model.Brain> helpers = new ArrayList<>();
+        for (Model.Brain b : all) if (lead != null && !b.id.equals(lead.id)) helpers.add(b);
+        Model.Entry u = new Model.Entry("Tu", "user", text);
+        chat.add(u);
+        addBubble(u);
+        if (lead == null || helpers.isEmpty() || !Net.isOnline(this)) {
+            addNotice("Per la squadra servono internet e almeno 2 cervelli online con la chiave (un capo e un collaboratore). Aggiungili nelle Impostazioni.");
+            store.saveChat(modeId, chat);
+            return;
+        }
+        final Model.Brain leader = lead;
+        final OpenAiClient.Cancel master = new OpenAiClient.Cancel();
+        cancel = master;
+        final List<OpenAiClient.Cancel> subs = new ArrayList<>();
+        final List<Team.Worker> workers = new ArrayList<>();
+        for (Model.Brain h : helpers) {
+            final OpenAiClient.Cancel c = new OpenAiClient.Cancel();
+            subs.add(c);
+            final Model.Brain hb = h;
+            workers.add(new Team.Worker(h.name, (m, sink) -> OpenAiClient.chat(hb, m, sink, c)));
+        }
+        final OpenAiClient.Cancel lc = new OpenAiClient.Cancel();
+        subs.add(lc);
+        master.setOnCancel(() -> {
+            for (OpenAiClient.Cancel c : subs) c.cancel();
+        });
+        final String ctxProj = Project.forPrompt(store.project().equals(Project.TEMPLATE) ? "" : store.project(), 3000);
+        pendingQ = text;
+        pendingReplies.clear();
+        setBusy(true);
+        scrollDown();
+
+        final java.util.Map<String, Model.Entry> entries = new java.util.concurrent.ConcurrentHashMap<>();
+        final java.util.Map<String, TextView> views = new java.util.concurrent.ConcurrentHashMap<>();
+        final Team.Events ev = new Team.Events() {
+            @Override
+            public void begin(String key, String label) {
+                ui.post(() -> {
+                    Model.Entry e = new Model.Entry(label, "assistant", "");
+                    entries.put(key, e);
+                    chat.add(e);
+                    views.put(key, addBubble(e));
+                    if (key.equals("final")) pendingReplies.add(e);
+                    scrollDown();
+                });
+            }
+
+            @Override
+            public void delta(String key, String t) {
+                ui.post(() -> {
+                    Model.Entry e = entries.get(key);
+                    TextView v = views.get(key);
+                    if (e == null || v == null) return;
+                    e.text = e.text + t;
+                    v.setText(shown(e));
+                    scrollDown();
+                });
+            }
+
+            @Override
+            public void end(String key) {}
+
+            @Override
+            public boolean cancelled() {
+                return master.cancelled;
+            }
+        };
+        new Thread(() -> {
+            String err = null;
+            try {
+                Team.run((m, sink) -> OpenAiClient.chat(leader, m, sink, lc), workers, text, ctxProj, ev);
+            } catch (OpenAiClient.ChatException e) {
+                err = e.getMessage();
+            } catch (RuntimeException e) {
+                err = "Errore inatteso: " + e;
+            }
+            final String fErr = err;
+            ui.post(() -> {
+                for (java.util.Iterator<Model.Entry> it = chat.iterator(); it.hasNext(); ) {
+                    Model.Entry e = it.next();
+                    if (e.text.isEmpty() && "assistant".equals(e.role)) it.remove();
+                }
+                render();
+                if (fErr != null) addNotice(fErr);
+                setBusy(false);
+                store.saveChat(modeId, chat);
+                logProject();
+            });
+        }).start();
     }
 
     /** Scrive nel registro del progetto cosa è stato chiesto e risposto, e (se acceso) lo salva su GitHub. */

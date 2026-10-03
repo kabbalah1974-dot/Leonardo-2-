@@ -111,6 +111,15 @@ public final class Store {
         sp.edit().putBoolean("parallel", on).apply();
     }
 
+    /** Il cervello che fa da capo squadra (vuoto = il cervello in uso). */
+    public String leaderId() {
+        return sp.getString("leader", "");
+    }
+
+    public void setLeaderId(String id) {
+        sp.edit().putString("leader", id == null ? "" : id).apply();
+    }
+
     // ---- agenti ----
     public List<Model.Agent> agents() {
         List<Model.Agent> out = new ArrayList<>();
